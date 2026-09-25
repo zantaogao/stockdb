@@ -246,3 +246,10 @@
 - 现象：09-22 14:00 M2 cmmr_fusion 盘中 NAV 报 -2.36%，实时按行情核算实为 +1.34%（假摔）。
 - 根因（代码实锤）：`core/unified_account.py` `record_nav()`（双机同为 09-05 版）对 price_map 里缺实时价的持仓用 `price_map.get(code, avg_cost)` 按**成本价**兜底——浮盈票缺价瞬间被计回成本，账户越大浮盈 NAV 盘中假摔越深。尾盘 15:00 全价重记后当日行自动回正（09-22 终值 +1.4351 无误），**损的是盘中读数不是账本**。
 - 状态：用户 09-22 说"治本"但代码未改（unified_account.py mtime 仍 09-05，双机一致）。候选治本方向：缺价持仓跳过估值改记"部分覆盖"标记 + 覆盖率不足时不写当日行（覆盖式重记）。下次动 unified_account.py 时一并做，做时双机同改（文件未分叉，可 MD5 对拍）。
+## 2026-09-25 晚间（RQAlpha 迁移工程日）
+- 17:0x-17:4x 阶段1/2 + 3.1/3.2/3.4 落地（初建8 commit）：git init、ETF错峰17:50、920补拉cron注册、~/venvs/rqalpha(6.4.0)、日线bundle 5824票撮合对账过、bundle_min 5254票npz+分钟撮合mod(stockdb_min)对账过（09:35首根bar成交10.74）
+- 外部核查揪出 P1（bundle 2.7G入git→.git 2.4G）/P2/P3/P4；修复：止血rm--cached→发现漏加ignore→gc不回收（历史blob可达）→压平历史至单commit+gc：2.4G→18M达标。代价：8commit明细不可逆丢失（无filter-repo，事后方案=git filter-repo --invert-paths保历史）
+- 物证归档 rqalpha_lab/verification/ 6份（3.2/3.4对账唯一物证，/tmp副本仍在）
+- 残留清理：_score_cache.json/signal_cache 退库；rqalpha_lab/.gitignore 局部保险（bundle//npz/h5）
+- 纪律（定案）：此后每阶段独立commit（阶段2验收/3.3迁移/3.5对拍各一个），禁再squash
+- 待验证：A=920补拉cron今晚00:30首跑（failed.txt应<364）；B=ETF 17:50明午首跑（ledger.db无锁冲突）；3.3硬闸等A/B
