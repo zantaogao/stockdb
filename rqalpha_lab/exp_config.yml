@@ -1,0 +1,20 @@
+# rqalpha 实验配置（Task 3.2 闭环验证用）
+base:
+  frequency: '1d'
+  accounts:
+    stock: 100000
+  data_bundle_path: /Users/zantao/.hermes/stockdb/rqalpha_lab/bundle
+# 定案走 bundle+原生 BaseDataSource，本 v0 备选 mod 默认关（导入需 PYTHONPATH 指到本目录）
+mod:
+  stockdb:
+    enabled: false
+  sys_analyser:
+    enabled: true
+    plot: false
+  sys_simulation:
+    enabled: true
+    matching_type: current_bar
+  sys_transaction_cost:
+    enabled: true
+extra:
+  system_log: info

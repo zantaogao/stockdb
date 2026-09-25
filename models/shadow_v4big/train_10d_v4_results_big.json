@@ -1,0 +1,50 @@
+{
+ "trained_at": "2026-09-05 02:11:33",
+ "samples_file": "samples_v4_big.parquet",
+ "n_samples": 7631775,
+ "n_features": 31,
+ "date_range": [
+  "2019-04-03",
+  "2026-08-21"
+ ],
+ "split_date": "2025-03-05",
+ "n_train": 5864625,
+ "n_val": 1767150,
+ "params": {
+  "objective": "regression",
+  "metric": "l2",
+  "num_leaves": 15,
+  "learning_rate": 0.008,
+  "feature_fraction": 0.6,
+  "bagging_fraction": 0.6,
+  "bagging_freq": 5,
+  "min_data_in_leaf": 300,
+  "lambda_l1": 0.5,
+  "lambda_l2": 2.0,
+  "max_depth": 5,
+  "min_gain_to_split": 0.2,
+  "verbose": 1,
+  "num_threads": 8
+ },
+ "num_boost_round_max": 2000,
+ "early_stopping": 50,
+ "best_iteration": 486,
+ "num_trees": 486,
+ "val_daily_rank_ic_mean": 0.06443978436655871,
+ "val_days": 359,
+ "pos_ic_ratio": 0.6629526462395543,
+ "daily_ic_csv": "C:\\Users\\zantan\\retrain_10d_v4\\daily_ic_v4_big.csv",
+ "deciles_pct": [
+  -0.3124844874886507,
+  0.2772894921937321,
+  0.39793129726837484,
+  0.29178123777094356,
+  0.1947901672247587,
+  0.24193345789243512,
+  0.5708246339483183,
+  0.8274237091503924,
+  1.2463119784668195,
+  2.9294409979286997
+ ],
+ "gain_top15": "C:\\Users\\zantan\\retrain_10d_v4\\gain_top15_v4_big.json"
+}

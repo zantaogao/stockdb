@@ -1,0 +1,592 @@
+#!/usr/bin/env python3
+"""
+每日因子IC监控
+
+每天收盘后运行，计算所有因子的日频Rank IC，写入数据库。
+同时维护滚动20日/60日的IC均值、ICIR、胜率等统计指标。
+
+依赖:
+  - stock_daily (行情)
+  - stock_valuation (估值因子: pe/pb/总市值)
+  - factor_daily_values (已有历史因子的补充)
+
+输出表:
+  - factor_ic_daily: 每日IC记录
+  - factor_ic_roll: 滚动统计 (20日/60日窗口)
+
+用法:
+  python3 ic_daily.py                  # 计算最近1个交易日
+  python3 ic_daily.py --days 5         # 计算最近5个交易日
+  python3 ic_daily.py --full           # 全量重算 (耗时)
+"""
+
+import argparse
+import json
+import sys
+import os
+from datetime import date, timedelta
+from pathlib import Path
+from scipy import stats as sp_stats
+
+import duckdb
+import numpy as np
+
+BASE = Path(__file__).parent.resolve()
+DB_PATH = str(BASE / 'tushare.db')
+
+# 前向收益期限 (天)
+HORIZONS = [1, 5, 10]
+
+# 滚动统计窗口 (交易日数)
+ROLL_WINDOWS = [20, 60]
+
+# 因子定义：从stock_daily/stock_valuation可直接计算的因子
+# group: 分组, source: 数据来源表
+BASE_FACTORS = {
+    # momentum
+    'mom_5':   {'group': 'momentum',   'source': 'stock_daily'},
+    'mom_10':  {'group': 'momentum',   'source': 'stock_daily'},
+    'mom_20':  {'group': 'momentum',   'source': 'stock_daily'},
+    'mom_60':  {'group': 'momentum',   'source': 'stock_daily'},
+    # volatility
+    'vol_20':  {'group': 'volatility', 'source': 'stock_daily'},
+    'vol_60':  {'group': 'volatility', 'source': 'stock_daily'},
+    # liquidity
+    'turn_5':  {'group': 'liquidity',  'source': 'stock_daily'},
+    'turn_20': {'group': 'liquidity',  'source': 'stock_daily'},
+    # valuation
+    'ep_ttm':  {'group': 'valuation',  'source': 'stock_valuation'},
+    'bp':      {'group': 'valuation',  'source': 'stock_valuation'},
+    'ln_cap':  {'group': 'size',       'source': 'stock_valuation'},
+    # quality
+    'roe':     {'group': 'quality',    'source': 'stock_valuation'},
+}
+
+# GTJA因子从factor_daily_values读取
+GTJA_FACTORS_QUERY = """
+    SELECT factor_name FROM factor_registry 
+    WHERE group_name = 'gtja' AND active = true 
+    ORDER BY factor_name
+"""
+
+
+def compute_daily_factors(conn, target_dates=None) -> dict:
+    """
+    从stock_daily计算基础因子。
+    返回 {factor_name: {date_str(YYYYMMDD): {stock_code: value}}}
+    """
+    if target_dates:
+        max_d_raw = max(target_dates)
+        if '-' in str(max_d_raw):
+            max_d = int(str(max_d_raw).replace('-', ''))
+        else:
+            max_d = int(str(max_d_raw))
+        min_d_val = max_d - (60 * 2)  # ~60 trading days back from last target
+        min_d = str(min_d_val)[0:4] + '-' + str(min_d_val)[4:6] + '-' + str(min_d_val)[6:8]
+        print(f"  读取stock_daily ({min_d}~{max_d})...")
+        rows = conn.execute("""
+            SELECT stock_code, date, close, turn_rate, change_pct
+            FROM stock_daily
+            WHERE date >= ? AND date <= ?
+            ORDER BY stock_code, date
+        """, [min_d, max_d]).fetchall()
+    else:
+        print("  读取stock_daily...")
+        rows = conn.execute("""
+            SELECT stock_code, date, close, turn_rate, change_pct
+            FROM stock_daily
+            ORDER BY stock_code, date
+        """).fetchall()
+
+    # 按股票分组
+    by_stock = {}
+    for code, dt, close, turn, chg in rows:
+        by_stock.setdefault(code, []).append((dt, close, turn, chg))
+
+    factors = {name: {} for name in BASE_FACTORS if BASE_FACTORS[name]['source'] == 'stock_daily'}
+
+    for code, data in by_stock.items():
+        data.sort(key=lambda x: x[0])
+        closes = [d[1] for d in data]
+        turns = [d[2] for d in data]
+        dates = [d[0] for d in data]
+        changes = [d[3] for d in data]
+
+        n = len(closes)
+        for i in range(n):
+            dt = dates[i]
+            dt_str = str(dt).replace('-', '')  # YYYYMMDD
+            c = closes[i]
+
+            # --- momentum: close / lag(close, N) - 1 ---
+            for lag in [5, 10, 20, 60]:
+                if i >= lag and closes[i - lag] > 0:
+                    fkey = f'mom_{lag}'
+                    val = c / closes[i - lag] - 1
+                    factors[fkey].setdefault(dt_str, {})[code] = val
+
+            # --- turn: avg(turn_rate, N) ---
+            for window in [5, 20]:
+                if i >= window - 1 and turns[i] is not None:
+                    fkey = f'turn_{window}'
+                    vals = [turns[j] for j in range(i - window + 1, i + 1) if turns[j] is not None]
+                    if vals:
+                        factors[fkey].setdefault(dt_str, {})[code] = np.mean(vals)
+
+            # --- volatility: std(change_pct, N) * sqrt(252) ---
+            for window in [20, 60]:
+                if i >= window:
+                    fkey = f'vol_{window}'
+                    vals = [changes[j] for j in range(i - window, i + 1) if changes[j] is not None]
+                    if len(vals) >= window:
+                        factors[fkey].setdefault(dt_str, {})[code] = np.std(vals, ddof=1) * np.sqrt(252)
+
+    return factors
+
+
+def compute_valuation_factors(conn) -> dict:
+    """
+    从stock_valuation计算估值因子。
+    返回 {factor_name: {date_str: {stock_code: value}}}
+    """
+    print("  读取stock_valuation...")
+    rows = conn.execute("""
+        SELECT stock_code, date, pe_ttm, pb, total_mv
+        FROM stock_valuation
+        ORDER BY stock_code, date
+    """).fetchall()
+
+    factors = {
+        'ep_ttm': {},
+        'bp': {},
+        'ln_cap': {},
+        'roe': {},
+    }
+
+    for code, dt, pe, pb, mv in rows:
+        # dt格式可能是整数如20260626
+        if isinstance(dt, (int, np.integer)):
+            dt_str = str(dt)
+        else:
+            dt_str = str(dt).replace('-', '')
+
+        if pe and pe > 0:
+            factors['ep_ttm'].setdefault(dt_str, {})[code] = 1.0 / pe
+        if pb and pb > 0:
+            factors['bp'].setdefault(dt_str, {})[code] = 1.0 / pb
+        if mv and mv > 0:
+            factors['ln_cap'].setdefault(dt_str, {})[code] = np.log(mv)
+
+    # ROE从stk_fin_income获取(财报日，不向前填充)
+    print("  读取stk_fin_income (ROE)...")
+    roe_rows = conn.execute("""
+        SELECT stock_code, end_date, roe
+        FROM stk_fin_income
+        WHERE roe IS NOT NULL
+        ORDER BY stock_code, end_date
+    """).fetchall()
+
+    for code, end_dt, roe_val in roe_rows:
+        dt_str = str(end_dt).replace('-', '')
+        factors['roe'].setdefault(dt_str, {})[code] = roe_val
+
+    return factors
+
+
+def get_forward_returns(conn, target_dates=None) -> dict:
+    """
+    计算前向收益率。
+    返回 {date_str(YYYYMMDD): {stock_code: {horizon: return_pct}}}
+    """
+    if target_dates:
+        # Only load data around the target dates for efficiency
+        max_d_raw = max(target_dates)
+        if '-' in str(max_d_raw):
+            max_d_int = int(str(max_d_raw).replace('-', ''))
+        else:
+            max_d_int = int(str(max_d_raw))
+        min_d_int = max_d_int - (max(HORIZONS) * 252)  # ~1 year back from last target
+        if '-' in str(max_d):
+            min_d = str(min_d_int)[0:4] + '-' + str(min_d_int)[4:6] + '-' + str(min_d_int)[6:8]
+            max_d = str(max_d_raw)
+        print(f"  读取stock_daily ({min_d}~{max_d})...")
+        rows = conn.execute("""
+            SELECT stock_code, date, close
+            FROM stock_daily
+            WHERE date >= ? AND date <= ?
+            ORDER BY stock_code, date
+        """, [min_d, max_d]).fetchall()
+    else:
+        print("  读取stock_daily...")
+        rows = conn.execute("""
+            SELECT stock_code, date, close
+            FROM stock_daily
+            ORDER BY stock_code, date
+        """).fetchall()
+
+    by_stock = {}
+    for code, dt, close in rows:
+        by_stock.setdefault(code, []).append((dt, close))
+
+    fwd = {}
+    for code, data in by_stock.items():
+        data.sort(key=lambda x: x[0])
+        dates = [d[0] for d in data]
+        closes = [d[1] for d in data]
+        n = len(closes)
+
+        for i in range(n):
+            dt = dates[i]
+            dt_str = str(dt).replace('-', '')  # YYYYMMDD
+            c0 = closes[i]
+            if c0 <= 0:
+                continue
+
+            for h in HORIZONS:
+                if i + h < n:
+                    c1 = closes[i + h]
+                    ret = c1 / c0 - 1
+                    fwd.setdefault(dt_str, {}).setdefault(code, {})[h] = ret
+
+    return fwd
+
+
+def compute_rank_ic(factor_values: dict, returns: dict) -> tuple:
+    """
+    计算Rank IC (Spearman相关系数)。
+    factor_values: {stock_code: factor_value}
+    returns: {stock_code: return_value}
+    返回 (rank_ic, p_value, n)
+    """
+    # 取共同股票
+    common = set(factor_values.keys()) & set(returns.keys())
+    if len(common) < 30:
+        return None, None, len(common)
+
+    fv = [factor_values[c] for c in common]
+    rv = [returns[c] for c in common]
+
+    # 过滤NaN/Inf
+    mask = (np.isfinite(fv) & np.isfinite(rv))
+    fv_clean = [fv[i] for i in range(len(fv)) if mask[i]]
+    rv_clean = [rv[i] for i in range(len(rv)) if mask[i]]
+
+    if len(fv_clean) < 30:
+        return None, None, len(fv_clean)
+
+    rho, pval = sp_stats.spearmanr(fv_clean, rv_clean)
+    return rho, pval, len(fv_clean)
+
+
+def ensure_tables(conn):
+    """创建IC存储表(如果不存在)"""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS factor_ic_daily (
+            date        VARCHAR NOT NULL,
+            factor_name VARCHAR NOT NULL,
+            rank_ic     DOUBLE,
+            p_value     DOUBLE,
+            n_stocks    INTEGER,
+            ret_horizon INTEGER NOT NULL,
+            PRIMARY KEY (date, factor_name, ret_horizon)
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS factor_ic_roll (
+            factor_name VARCHAR NOT NULL,
+            as_of_date  VARCHAR NOT NULL,
+            "window"    INTEGER NOT NULL,
+            mean_ic     DOUBLE,
+            std_ic      DOUBLE,
+            icir        DOUBLE,
+            win_rate    DOUBLE,
+            max_ic      DOUBLE,
+            min_ic      DOUBLE,
+            n_days      INTEGER,
+            ret_horizon INTEGER NOT NULL,
+            group_name  VARCHAR,
+            PRIMARY KEY (factor_name, as_of_date, "window", ret_horizon)
+        )
+    """)
+    print("  表结构已就绪")
+
+
+def run_ic_calc(conn, target_dates, factors_all):
+    """
+    对指定日期计算每日IC。
+    target_dates: [date_str, ...]
+    factors_all: {factor_name: {date_str: {stock_code: value}}}
+    """
+    # 读取前向收益
+    print("计算前向收益...")
+    fwd = get_forward_returns(conn, target_dates=target_dates)
+
+    # 批量插入
+    ic_records = []
+
+    for dt_str in target_dates:
+        print(f"\n  处理 {dt_str}...")
+        day_returns = fwd.get(dt_str, {})
+        if not day_returns:
+            print(f"    无行情数据，跳过")
+            continue
+
+        for fname, fdata in factors_all.items():
+            day_factors = fdata.get(dt_str, {})
+            if not day_factors:
+                continue
+
+            for h in HORIZONS:
+                rets = {code: vals.get(h) for code, vals in day_returns.items() if vals.get(h) is not None}
+                if len(rets) < 30:
+                    continue
+
+                rank_ic, pval, n = compute_rank_ic(day_factors, rets)
+                if rank_ic is not None:
+                    ic_records.append((dt_str, fname, round(rank_ic, 6), 
+                                       round(pval, 6) if pval else None, n, h))
+
+    # 写入数据库
+    if ic_records:
+        print(f"\n写入 {len(ic_records)} 条IC记录...")
+        conn.execute("DELETE FROM factor_ic_daily WHERE date IN (" + 
+                     ",".join(["'" + d + "'" for d in target_dates]) + ")")
+        conn.executemany(
+            "INSERT OR REPLACE INTO factor_ic_daily (date, factor_name, rank_ic, p_value, n_stocks, ret_horizon) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ic_records
+        )
+        conn.commit()
+        print(f"  写入完成")
+    else:
+        print("  无IC记录可写入")
+
+    return ic_records
+
+
+def compute_roll_stats(conn):
+    """计算滚动统计指标"""
+    print("\n计算滚动统计...")
+    
+    # 获取所有因子和horizon组合
+    combos = conn.execute("""
+        SELECT DISTINCT fid.factor_name, fid.ret_horizon, fr.group_name
+        FROM factor_ic_daily fid
+        LEFT JOIN factor_registry fr ON fid.factor_name = fr.factor_name
+        ORDER BY fid.factor_name, fid.ret_horizon
+    """).fetchall()
+
+    if not combos:
+        print("  无IC数据，跳过滚动统计")
+        return
+
+    roll_records = []
+    for fname, h, group in combos:
+        if group is None:
+            # 从BASE_FACTORS推断
+            group = BASE_FACTORS.get(fname, {}).get('group', 'unknown')
+
+        # 获取该因子+horizon的所有IC记录(按日期排序)
+        ic_rows = conn.execute("""
+            SELECT date, rank_ic
+            FROM factor_ic_daily
+            WHERE factor_name = ? AND ret_horizon = ?
+            ORDER BY date
+        """, [fname, h]).fetchall()
+
+        if len(ic_rows) < 10:
+            continue
+
+        dates = [r[0] for r in ic_rows]
+        ics = [r[1] for r in ic_rows]
+
+        for w in ROLL_WINDOWS:
+            for i in range(w - 1, len(ics)):
+                window_ics = ics[i - w + 1:i + 1]
+                as_of = dates[i]
+
+                mean_ic = np.mean(window_ics)
+                std_ic = np.std(window_ics, ddof=1) if w > 1 else 0
+                icir = mean_ic / std_ic if std_ic > 0 else 0
+                win_rate = sum(1 for x in window_ics if x > 0) / len(window_ics)
+
+                roll_records.append((
+                    fname, as_of, w,
+                    round(float(mean_ic), 6),
+                    round(float(std_ic), 6),
+                    round(float(icir), 4),
+                    round(win_rate, 4),
+                    round(float(np.max(window_ics)), 6),
+                    round(float(np.min(window_ics)), 6),
+                    w, h, group
+                ))
+
+    if roll_records:
+        # 删除旧滚动数据(保留最近120天)
+        conn.execute("DELETE FROM factor_ic_roll")
+        conn.executemany(
+            "INSERT OR REPLACE INTO factor_ic_roll "
+            "(factor_name, as_of_date, \"window\", mean_ic, std_ic, icir, win_rate, max_ic, min_ic, n_days, ret_horizon, group_name) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            roll_records
+        )
+        conn.commit()
+        print(f"  写入 {len(roll_records)} 条滚动统计")
+    else:
+        print("  无滚动统计数据")
+
+
+def main():
+    parser = argparse.ArgumentParser(description='每日因子IC监控')
+    parser.add_argument('--days', type=int, default=1, help='计算最近N个交易日 (default: 1)')
+    parser.add_argument('--full', action='store_true', help='全量重算所有历史交易日')
+    parser.add_argument('--roll-only', action='store_true', help='只计算滚动统计，不重新计算IC')
+    parser.add_argument('--date', type=str, default=None, help='指定单个日期 (YYYYMMDD)')
+    args = parser.parse_args()
+
+    conn = duckdb.connect(DB_PATH)
+    ensure_tables(conn)
+
+    if args.roll_only:
+        compute_roll_stats(conn)
+        conn.close()
+        return
+
+    # 获取所有活跃因子
+    gtja_factors = conn.execute(GTJA_FACTORS_QUERY).fetchall()
+    gtja_names = [r[0] for r in gtja_factors]
+    all_factor_names = list(BASE_FACTORS.keys()) + gtja_names
+    print(f"监控因子: {len(all_factor_names)}个 (基础{len(BASE_FACTORS)} + GTJA{len(gtja_names)})")
+
+    # 先确定目标日期（需要mom_5数据来筛选）
+    if args.date:
+        target_dates_list = [args.date]
+        need_date_filter = True
+    elif args.full:
+        target_dates_list = conn.execute("""
+            SELECT date FROM stock_daily
+            WHERE date >= CURRENT_DATE - INTERVAL '365' DAY
+            GROUP BY date ORDER BY date
+        """).fetchall()
+        target_dates_list = [str(d[0]).replace('-', '') for d in target_dates_list]
+        need_date_filter = False
+    else:
+        # 先用无过滤的方式读取mom_5，取最新N天作为目标日期
+        print("  快速读取stock_daily以确定目标日期...")
+        rows = conn.execute("""
+            SELECT stock_code, date, close
+            FROM stock_daily
+            ORDER BY stock_code, date
+        """).fetchall()
+        by_stock = {}
+        for code, dt, close in rows:
+            if isinstance(dt, str):
+                dt_str = dt.replace('-', '')
+            else:
+                dt_str = str(dt)
+            by_stock.setdefault(code, []).append((dt_str, close))
+        
+        mom5_dates = set()
+        for code, data in by_stock.items():
+            data.sort(key=lambda x: x[0])
+            n = len(data)
+            for i in range(5, n):
+                if data[i][1] > 0 and data[i-5][1] > 0:
+                    mom5_dates.add(data[i][0])
+        
+        sorted_dates = sorted(mom5_dates, reverse=True)[:args.days]
+        target_dates_list = sorted_dates
+        need_date_filter = True
+
+    # 计算基础因子 (momentum/vol/turn)
+    print("\n计算基础因子...")
+    daily_factors = compute_daily_factors(conn, target_dates=target_dates_list if need_date_filter else None)
+
+    # 计算估值因子
+    print("\n计算估值因子...")
+    val_factors = compute_valuation_factors(conn)
+
+    # 合并
+    factors_all = {}
+    factors_all.update(daily_factors)
+    factors_all.update(val_factors)
+
+    # 从factor_daily_values补充GTJA因子
+    print("\n加载GTJA因子...")
+    for gtja_name in gtja_names:
+        rows = conn.execute(f"""
+            SELECT date, stock_code, raw_value
+            FROM factor_daily_values
+            WHERE factor_name = '{gtja_name}'
+            ORDER BY date, stock_code
+        """).fetchall()
+        gtja_dict = {}
+        for dt, code, val in rows:
+            dt_str = str(dt).replace('-', '')
+            if val is not None:
+                gtja_dict.setdefault(dt_str, {})[code] = val
+        factors_all[gtja_name] = gtja_dict
+
+    # 确定目标日期
+    if args.date:
+        target_dates = [args.date]
+    elif args.full:
+        # 全量：取stock_daily中最近1年的所有交易日
+        target_dates = conn.execute("""
+            SELECT date FROM stock_daily
+            WHERE date >= CURRENT_DATE - INTERVAL '365' DAY
+            GROUP BY date
+            ORDER BY date
+        """).fetchall()
+        target_dates = [str(d[0]).replace('-', '') for d in target_dates]
+    else:
+        # 最近N个交易日(有mom_5数据的)
+        mom5 = factors_all.get('mom_5', {})
+    target_dates = target_dates_list
+    print(f"\n目标日期: {target_dates}")
+
+    # 计算IC
+    run_ic_calc(conn, target_dates, factors_all)
+
+    # 计算滚动统计
+    compute_roll_stats(conn)
+
+    # 输出摘要
+    print("\n" + "=" * 60)
+    print("IC计算完成，摘要:")
+    
+    for dt_str in target_dates[-1:]:
+        print(f"\n  {dt_str} 各因子IC (1日收益):")
+        ic_rows = conn.execute("""
+            SELECT factor_name, rank_ic, p_value, n_stocks
+            FROM factor_ic_daily
+            WHERE date = ? AND ret_horizon = 1
+            ORDER BY ABS(rank_ic) DESC
+        """, [dt_str]).fetchall()
+        for fname, ric, pval, n in ic_rows[:15]:
+            sig = '**' if (pval and pval < 0.01) else '*' if (pval and pval < 0.05) else ' '
+            print(f"    {fname:25s} IC={ric:+.4f}  p={pval:.4f}  n={n:>5d} {sig}")
+
+    # 滚动统计摘要 (最新日期)
+    latest_roll = conn.execute("""
+        SELECT DISTINCT as_of_date FROM factor_ic_roll ORDER BY as_of_date DESC LIMIT 1
+    """).fetchone()
+    if latest_roll:
+        ld = latest_roll[0]
+        print(f"\n  滚动统计 ({ld}, 20日窗口, 1日收益):")
+        roll_rows = conn.execute("""
+            SELECT factor_name, mean_ic, std_ic, icir, win_rate, group_name
+            FROM factor_ic_roll
+            WHERE as_of_date = ? AND "window" = 20 AND ret_horizon = 1
+            ORDER BY ABS(icir) DESC
+        """, [ld]).fetchall()
+        for fname, mic, sic, icir, wr, grp in roll_rows[:15]:
+            print(f"    {fname:25s} IC={mic:+.4f}  ICIR={icir:+.2f}  胜率={wr:.0%}  [{grp}]")
+
+    conn.close()
+    print("\nDone.")
+
+
+if __name__ == '__main__':
+    main()

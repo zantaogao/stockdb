@@ -1,0 +1,98 @@
+============================================================
+40d Regression — tushare data (random 80/20 split, seed=42)
+  Features: 23 base + 14 GTJA = 37
+  Params: lr=0.03, leaves=63, depth=8, 500 rounds, ES=20
+============================================================
+
+Loading index data from stock.db...
+  Index codes: ['000001', '000016', '000300', '000688', '000905', '399001', '399006', '399852']
+Loading GTJA...
+  GTJA lookups: 4
+
+Stocks: 7961
+  [500/7961] 1,018,525 samples [192s]
+  [1000/7961] 1,870,377 samples [366s]
+  [3000/7961] 2,222,813 samples [540s]
+  [3500/7961] 2,512,662 samples [667s]
+  [4000/7961] 2,766,638 samples [799s]
+  [5500/7961] 3,356,977 samples [926s]
+  [6000/7961] 4,467,092 samples [1142s]
+  [6500/7961] 5,333,558 samples [1305s]
+  [7000/7961] 6,135,802 samples [1465s]
+  [7500/7961] 6,588,587 samples [1566s]
+
+Total samples: 6,721,389
+Label stats: mean=-0.02% std=15.15%
+Label > 0: 46%
+
+Random 80/20 split (seed=42)...
+  Train: 5,377,111 (80%)
+  Val:   1,344,278 (20%)
+
+Computing normalization stats (train only)...
+  Stats saved: /Users/zantao/.hermes/stockdb/scripts/v6_norm_stats_40d_tushare_15gtja.json
+
+Training LightGBM...
+Training until validation scores don't improve for 20 rounds
+[25]	train's l2: 223.308	val's l2: 223.293
+[50]	train's l2: 220.563	val's l2: 220.574
+[75]	train's l2: 219.014	val's l2: 219.053
+[100]	train's l2: 217.978	val's l2: 218.043
+[125]	train's l2: 217.221	val's l2: 217.323
+[150]	train's l2: 216.56	val's l2: 216.695
+[175]	train's l2: 215.848	val's l2: 216.023
+[200]	train's l2: 215.279	val's l2: 215.481
+[225]	train's l2: 214.86	val's l2: 215.094
+[250]	train's l2: 214.404	val's l2: 214.671
+[275]	train's l2: 213.955	val's l2: 214.253
+[300]	train's l2: 213.606	val's l2: 213.93
+[325]	train's l2: 213.262	val's l2: 213.62
+[350]	train's l2: 212.906	val's l2: 213.297
+[375]	train's l2: 212.613	val's l2: 213.034
+[400]	train's l2: 212.311	val's l2: 212.76
+[425]	train's l2: 212.02	val's l2: 212.504
+[450]	train's l2: 211.719	val's l2: 212.233
+[475]	train's l2: 211.484	val's l2: 212.033
+[500]	train's l2: 211.281	val's l2: 211.863
+Did not meet early stopping. Best iteration is:
+[500]	train's l2: 211.281	val's l2: 211.863
+
+============================================================
+40d-tushare Model Results
+============================================================
+Best trees: 500
+Total features: 37
+Train IC: 0.2741
+Val IC:   0.2689
+
+Decile returns (val):
+  D1: -6.81%
+  D2: -3.62%
+  D3: -2.44%
+  D4: -1.42%
+  D5: -0.63%
+  D6: +0.14%
+  D7: +0.80%
+  D8: +1.83%
+  D9: +3.39%
+  D10: +8.78%
+  Spread: +15.58%
+  D10 hit rate: 71%
+
+Top 10 features (gain):
+  gtja_006    :  27.6%
+  d60         :  10.5%
+  d120        :   9.6%
+  chg60       :   7.1%
+  chg120      :   5.5%
+  gtja_184    :   4.2%
+  ln_cap      :   3.7%
+  gtja_177    :   3.3%
+  vr          :   2.9%
+  d20         :   2.9%
+  GTJA total: 35.0%
+
+Saved: /Users/zantao/.hermes/stockdb/scripts/lgb_reg_40d_tushare_15gtja.txt (500 trees, val IC=0.2689)
+Saved: /Users/zantao/.hermes/stockdb/scripts/v6_norm_stats_40d_tushare_15gtja.json
+Saved: /Users/zantao/.hermes/stockdb/scripts/train_40d_tushare_results_15gtja.json
+Time: 1650s

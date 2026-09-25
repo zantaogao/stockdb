@@ -1,0 +1,22 @@
+    def _handle_etf_list(self):
+        from core.db import get_tushare_db
+        from urllib.parse import urlparse, parse_qs
+        try:
+            params = parse_qs(urlparse(self.path).query)
+            cat = params.get("cat", [""])[0]
+            tconn = get_tushare_db()
+            if cat == "热门":
+                rows = tconn.execute("SELECT ts_code, name, fund_type FROM fund_basic WHERE fund_type='股票型' ORDER BY list_date DESC LIMIT 20").fetchall()
+            elif cat == "宽基":
+                rows = tconn.execute("SELECT ts_code, name, fund_type FROM fund_basic ORDER BY list_date DESC LIMIT 30").fetchall()
+            elif cat == "科技":
+                rows = tconn.execute("SELECT ts_code, name, fund_type FROM fund_basic WHERE name LIKE '%科技%' OR name LIKE '%科创%' OR name LIKE '%半导体%' ORDER BY list_date DESC LIMIT 30").fetchall()
+            else:
+                rows = tconn.execute("SELECT ts_code, name, fund_type FROM fund_basic ORDER BY list_date DESC LIMIT 30").fetchall()
+            tconn.close()
+            lst = [{"ts_code": r[0], "name": r[1], "fund_type": r[2], "score": None} for r in rows]
+            self._json({"list": lst})
+        except Exception as e:
+            print(f"ETF list error: {e}")
+            self._json({"error": str(e)})
+

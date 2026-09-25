@@ -1,0 +1,101 @@
+[
+  {
+    "time": "2026-06-09T13:20:35.400054",
+    "type": "buy",
+    "code": "603677",
+    "price": 15.78,
+    "shares": 5000,
+    "score": 17.4,
+    "style": "reversal"
+  },
+  {
+    "time": "2026-06-09T13:20:35.400054",
+    "type": "buy",
+    "code": "605099",
+    "price": 37.98,
+    "shares": 2100,
+    "score": 16.4,
+    "style": "reversal"
+  },
+  {
+    "time": "2026-06-09T13:20:35.400054",
+    "type": "buy",
+    "code": "300483",
+    "price": 18.12,
+    "shares": 4400,
+    "score": 16.0,
+    "style": "reversal"
+  },
+  {
+    "time": "2026-06-09T13:20:35.400054",
+    "type": "buy",
+    "code": "002043",
+    "price": 12.25,
+    "shares": 6500,
+    "score": 15.9,
+    "style": "reversal"
+  },
+  {
+    "time": "2026-06-09T13:20:35.400054",
+    "type": "buy",
+    "code": "300996",
+    "price": 11.2,
+    "shares": 7100,
+    "score": 15.9,
+    "style": "reversal"
+  },
+  {
+    "time": "2026-06-09T13:20:39.971957",
+    "type": "sell_all",
+    "code": "002043",
+    "price": 12.26,
+    "shares": 6500,
+    "pnl": 0.08,
+    "reason": "深度破位(120=-16%)"
+  },
+  {
+    "time": "2026-06-09T13:20:39.971957",
+    "type": "buy",
+    "code": "603345",
+    "price": 87.94,
+    "shares": 900,
+    "score": 15.9,
+    "style": "reversal"
+  },
+  {
+    "time": "2026-06-11T09:40:34.377307",
+    "type": "sell_all",
+    "code": "603677",
+    "price": 14.57,
+    "shares": 5000,
+    "pnl": -7.67,
+    "reason": "硬止损-7.7%"
+  },
+  {
+    "time": "2026-06-11T09:40:34.377307",
+    "type": "buy",
+    "code": "002795",
+    "price": 7.0,
+    "shares": 11400,
+    "score": 19.3,
+    "style": "reversal"
+  },
+  {
+    "time": "2026-06-12T09:30:22.289298",
+    "type": "sell_all",
+    "code": "605099",
+    "price": 34.91,
+    "shares": 2100,
+    "pnl": -8.08,
+    "reason": "硬止损-8.1%"
+  },
+  {
+    "time": "2026-06-12T09:30:22.289298",
+    "type": "buy",
+    "code": "600312",
+    "price": 18.52,
+    "shares": 4300,
+    "score": 19.3,
+    "style": "reversal"
+  }
+]

@@ -1,0 +1,29 @@
+{
+  "cls27": {
+    "auc": 0.6332,
+    "accuracy": 0.5917,
+    "ic": 0.2304,
+    "d1_hit_rate": 31.47,
+    "d10_hit_rate": 76.64,
+    "hit_rate_spread": 45.17,
+    "pos_hit_rate": 56.92,
+    "trees": 500,
+    "features": 27,
+    "time_sec": 57
+  },
+  "cls20": {
+    "auc": 0.5905,
+    "accuracy": 0.5631,
+    "ic": 0.1565,
+    "d1_hit_rate": 35.66,
+    "d10_hit_rate": 66.01,
+    "hit_rate_spread": 30.35,
+    "pos_hit_rate": 54.07,
+    "trees": 500,
+    "features": 20,
+    "time_sec": 54
+  },
+  "samples": 6508197,
+  "positive_rate": 48.04,
+  "total_time_sec": 1061
+}

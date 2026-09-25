@@ -1,0 +1,12 @@
+{
+  "ic_val": 0.088,
+  "ic_train": 0.1706,
+  "spread_pct": 4.17,
+  "hit_rate": 52.0,
+  "best_trees": 37,
+  "features": 37,
+  "train_samples": 6303966,
+  "val_samples": 432439,
+  "split_date": "20250101",
+  "time_sec": 1607
+}

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.aquant.regime-replay</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/zantao/.hermes/stockdb/scripts/run_regime_replay.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>START</key>
+    <string>20220104</string>
+    <key>END</key>
+    <string>20260911</string>
+  </dict>
+  <key>WorkingDirectory</key>
+  <string>/Users/zantao/.hermes/stockdb</string>
+  <key>StandardOutPath</key>
+  <string>/Users/zantao/.hermes/stockdb/logs/regime_replay_0913.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/zantao/.hermes/stockdb/logs/regime_replay_0913.err</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+</dict>
+</plist>

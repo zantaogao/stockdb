@@ -1,0 +1,81 @@
+============================================================
+20d Regression — tushare data (time split: <20250101)
+  Features: 23 base + 14 GTJA = 37
+  Params: lr=0.04, leaves=31, depth=6, 120 rounds, ES=30
+============================================================
+
+Loading index data from stock.db...
+  Index codes loaded: 8
+Loading GTJA...
+  GTJA lookups: 4
+
+Stocks: 7961
+  [500/7961] 1,016,063 samples [183s]
+  [1000/7961] 1,867,560 samples [354s]
+  [3000/7961] 2,225,605 samples [529s]
+  [3500/7961] 2,519,509 samples [656s]
+  [4000/7961] 2,778,022 samples [789s]
+  [5500/7961] 3,371,402 samples [916s]
+  [6000/7961] 4,480,317 samples [1125s]
+  [6500/7961] 5,347,710 samples [1288s]
+  [7000/7961] 6,147,592 samples [1447s]
+  [7500/7961] 6,599,785 samples [1548s]
+
+Total samples: 6,736,405
+Label stats: mean=-0.34% std=10.31%
+Label > 0: 46%
+
+Train (before 20250101): 6,303,966 (94%)
+Val   (on/after 20250101): 432,439 (6%)
+
+Computing normalization stats (train only)...
+  Stats saved: /Users/zantao/.hermes/stockdb/scripts/v6_norm_stats_20d_tushare_15gtja_v4.json
+
+Training LightGBM...
+Training until validation scores don't improve for 60 rounds
+[25]	train's l2: 103.2	val's l2: 130.248
+[50]	train's l2: 102.279	val's l2: 130.106
+[75]	train's l2: 101.659	val's l2: 130.094
+[100]	train's l2: 101.217	val's l2: 130.137
+Early stopping, best iteration is:
+[63]	train's l2: 101.931	val's l2: 130.073
+
+============================================================
+20d-tushare Model Results
+============================================================
+Best trees: 63
+Total features: 37
+Train IC: 0.1707
+Val IC:   0.0884
+
+Decile returns (val):
+  D1: -3.54%
+  D2: -2.98%
+  D3: -2.96%
+  D4: -3.40%
+  D5: -3.45%
+  D6: -2.98%
+  D7: -3.25%
+  D8: -2.86%
+  D9: -2.23%
+  D10: +0.67%
+  Spread: +4.21%
+  D10 hit rate: 52%
+
+Top 10 features (gain):
+  chg60       :  24.6%
+  gtja_006    :  16.5%
+  d120        :  11.0%
+  vr          :   9.5%
+  d60         :   8.2%
+  gtja_177    :   4.9%
+  rr          :   3.8%
+  d20         :   3.7%
+  chg120      :   3.2%
+  chg5        :   2.7%
+  GTJA total: 21.3%
+
+Saved: /Users/zantao/.hermes/stockdb/scripts/lgb_reg_20d_tushare_15gtja_v4.txt (63 trees, val IC=0.0884)
+Saved: /Users/zantao/.hermes/stockdb/scripts/v6_norm_stats_20d_tushare_15gtja_v4.json
+Saved: /Users/zantao/.hermes/stockdb/scripts/train_20d_tushare_results_15gtja_v4.json
+Time: 1598s

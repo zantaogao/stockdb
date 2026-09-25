@@ -1,0 +1,24 @@
+================================================================================
+CMMR 双轨策略实施 - 备份日志
+================================================================================
+创建时间：2026-07-28
+
+备份文件列表:
+1. agents/signal_agent.py.bak.20260728
+2. server_dashboard.py.bak.20260728  
+3. static/dashboard.html.bak.20260728
+
+新增文件:
+1. scripts/cmmr_standalone.py - CMMR 独立策略评分模块
+2. scripts/cmmr_trifactor_fusion.py - CMMR+ 三因子融合评分模块
+3. scripts/cmmr_ic_daily.py - CMMR IC 计算与入库脚本
+
+回滚命令:
+  cp agents/signal_agent.py.bak.20260728 agents/signal_agent.py
+  cp server_dashboard.py.bak.20260728 server_dashboard.py
+  cp static/dashboard.html.bak.20260728 static/dashboard.html
+  rm scripts/cmmr_standalone.py scripts/cmmr_trifactor_fusion.py scripts/cmmr_ic_daily.py
+  sqlite3 state.db "DROP TABLE IF EXISTS cmmr_ic_daily; DROP TABLE IF EXISTS fusion_ic_daily;"
+
+实施状态: 待验证
+================================================================================

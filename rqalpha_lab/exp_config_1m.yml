@@ -1,0 +1,19 @@
+# 分钟线撮合验证配置（Task 3.4）：frequency 1m
+base:
+  frequency: '1m'
+  accounts:
+    stock: 100000
+  data_bundle_path: /Users/zantao/.hermes/stockdb/rqalpha_lab/bundle
+mod:
+  stockdb:
+    enabled: false
+  sys_analyser:
+    enabled: true
+    plot: false
+  sys_simulation:
+    enabled: true
+    matching_type: current_bar
+  sys_transaction_cost:
+    enabled: true
+extra:
+  system_log: info

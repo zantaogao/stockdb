@@ -1,0 +1,40 @@
+# 数据与备份（体积/二进制，不进 git）
+*.db
+*.db.*
+*.duckdb
+*.duckdb.*
+*.sqlite
+*.sqlite3
+*.wal
+*.shm
+db_backups/
+tdx/
+minutes/
+analysis/
+pc_export_v4e/
+backtest_results/
+replay/
+logs/
+retire/
+static/
+sim_accounts/
+orders/
+models/*.txt
+models/*.bin
+models/*.joblib
+*.parquet
+# 编辑残留
+*.bak*
+*~
+__pycache__/
+*.pyc
+.DS_Store
+# RQAlpha bundle（生成物，体积大且每次重建都变；构建脚本在 rqalpha_lab/）
+rqalpha_lab/bundle/
+rqalpha_lab/bundle_min/
+# 面板运行态缓存
+.cache/
+# 运行态输出
+output/
+cron_output/
+*.log

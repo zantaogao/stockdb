@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.llama.27bretic.server</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/zantao/.llama/llama-b10472/llama-server</string>
+		<string>-m</string>
+		<string>/Users/zantao/models/qwen3.8-27b-heretic-rvn-gguf/RVN-Q6_K-mtp.gguf</string>
+		<string>--host</string>
+		<string>127.0.0.1</string>
+		<string>--port</string>
+		<string>8082</string>
+		<string>-ngl</string>
+		<string>99</string>
+		<string>-c</string>
+		<string>131072</string>
+		<string>-np</string>
+		<string>1</string>
+		<string>--reasoning</string>
+		<string>off</string>
+		<string>--alias</string>
+		<string>qwen3.8-27b-heretic-rvn</string>
+		<string>--sleep-idle-seconds</string>
+		<string>600</string>
+		<string>--mmproj</string>
+		<string>/Users/zantao/models/qwen3.8-27b-heretic-rvn-gguf/mmproj-Qwen3.8-27B-Q8_0.gguf</string>
+		<string>--spec-type</string>
+		<string>draft-mtp</string>
+		<string>--spec-draft-n-max</string>
+		<string>2</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/llama-server-error.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/llama-server.log</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/zantao/.llama/llama-b10472</string>
+</dict>
+</plist>
