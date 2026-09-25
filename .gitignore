@@ -38,3 +38,7 @@ rqalpha_lab/bundle_min/
 output/
 cron_output/
 *.log
+
+# 运行态缓存（历史遗留，程序若再写会重新脏）
+_score_cache.json
+signal_cache/

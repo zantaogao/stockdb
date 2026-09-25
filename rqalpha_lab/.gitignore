@@ -1,0 +1,5 @@
+# 局部保险：bundle 数据文件永不入库（本次 P1 根因是根规则漏了新目录）
+bundle/
+bundle_min/
+*.npz
+*.h5
