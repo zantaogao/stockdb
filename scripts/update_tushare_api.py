@@ -172,11 +172,51 @@ def upsert_fin_df(db, df, table_name):
         print(f"    写入错误：{e}")
         return 0
 
+def _missing_trading_days(table, date_col, start_date, end_date, pro=None):
+    """[start, end] 区间内的**真实交易日**列表（ledger.db trade_cal 权威）。
+    2026-09-27 改造（09-25 调休休市误报复盘）：按天拉数循环只走日历——休市日 tushare 返回
+    0 行是常态，原来逐日空拉 + stk_factor 系列还干等 3×60s 重试，把休市日误判"上游未算完"。
+    ⚠️ 0927 二次修（09-24 真实缺数被漏判复盘）：回退**不能用本地 daily**——daily 恰恰是
+    要补的表，休市日本来就无行，本地回推会把休市日误当交易日拉，真缺数日反而被跳过。
+    日历不可用时改为从 tushare trade_cal 现场拉一次；再失败则返回 None 由调用方逐日拉。"""
+    try:
+        from core.trade_calendar import LEDGER_DB
+        import sqlite3 as _sq
+        sc = _sq.connect(str(LEDGER_DB), timeout=30)
+        try:
+            rows = sc.execute(
+                "SELECT cal_date FROM trade_cal WHERE is_open=1 AND cal_date>=? AND cal_date<=? ORDER BY cal_date",
+                (start_date, end_date)).fetchall()
+            if rows:
+                return [r[0] for r in rows]
+        finally:
+            sc.close()
+    except Exception:
+        pass
+    # 回退：日历不可用 → 从 tushare trade_cal 现场拉一次（调用方已建 pro 则复用，
+    # 否则 get_pro()——仅日历失败时才多这一次调用）。
+    # 再失败则返回 None，由调用方逐日盲拉（最保守，不漏数）。
+    try:
+        _pro = pro or get_pro()
+        cal = _pro.trade_cal(exchange='SSE', start_date=start_date, end_date=end_date,
+                             is_open='1')
+        if cal is not None and len(cal) > 0:
+            return [str(x).replace('-', '')[:8] for x in cal['cal_date'].tolist()]
+    except Exception as e:
+        print(f"  ⚠️ trade_cal 现场拉取失败：{str(e)[:60]}，回退逐日拉取")
+    return None
+
 def fetch_incremental(pro, func_name, df_func, table_name, date_col, start_date, end_date, **kwargs):
-    """增量拉取：从 start_date 到 end_date，每次拉一天，写入数据库"""
+    """增量拉取：日历序列逐日拉（休市日不拉，见 _missing_trading_days），写入数据库"""
     total = 0
-    current = start_date
-    while current <= end_date:
+    days = _missing_trading_days(table_name, date_col, start_date, end_date, pro=pro)
+    if days is None:
+        days = []
+        cur = start_date
+        while cur <= end_date:
+            days.append(cur)
+            cur = next_day(cur)
+    for current in days:
         try:
             df = df_func(**kwargs, **{date_col: current})
             if df is not None and len(df) > 0:
@@ -191,7 +231,6 @@ def fetch_incremental(pro, func_name, df_func, table_name, date_col, start_date,
                 break
             else:
                 print(f"    {current}: {err_str[:60]}")
-        current = next_day(current)
         time.sleep(0.15)
     return total
 
@@ -255,8 +294,15 @@ def update_daily(pro):
     try:
         total = 0
         # 每天拉一次
-        current = start_date
-        while current <= end_date:
+        # 2026-09-27 日历循环(trade_cal 权威): 休市日不拉(09-25 调休误报复盘)
+        _days = _missing_trading_days('daily', 'trade_date', start_date, end_date, pro=pro)
+        if _days is None:
+            _days = []
+            _c = start_date
+            while _c <= end_date:
+                _days.append(_c)
+                _c = next_day(_c)
+        for current in _days:
             try:
                 df = pro.query('daily', trade_date=current)
                 if df is not None and len(df) > 0:
@@ -279,7 +325,6 @@ def update_daily(pro):
                         print(f"  {current}: 重试失败：{e2}")
                 else:
                     print(f"  {current}: {err_str[:60]}")
-            current = next_day(current)
             time.sleep(0.12)
         db.execute("CHECKPOINT")
     finally:
@@ -306,8 +351,15 @@ def update_daily_basic(pro):
     db = get_db_writable()
     try:
         total = 0
-        current = start_date
-        while current <= end_date:
+        # 2026-09-27 日历循环(trade_cal 权威): 休市日不拉(09-25 调休误报复盘)
+        _days = _missing_trading_days('daily_basic', 'trade_date', start_date, end_date, pro=pro)
+        if _days is None:
+            _days = []
+            _c = start_date
+            while _c <= end_date:
+                _days.append(_c)
+                _c = next_day(_c)
+        for current in _days:
             try:
                 df = pro.daily_basic(trade_date=current)
                 if df is not None and len(df) > 0:
@@ -322,7 +374,6 @@ def update_daily_basic(pro):
                     break
                 else:
                     print(f"  {current}: {err_str[:60]}")
-            current = next_day(current)
             time.sleep(0.15)
         db.execute("CHECKPOINT")
     finally:
@@ -349,8 +400,15 @@ def update_adj_factor(pro):
     db = get_db_writable()
     try:
         total = 0
-        current = start_date
-        while current <= end_date:
+        # 2026-09-27 日历循环(trade_cal 权威): 休市日不拉(09-25 调休误报复盘)
+        _days = _missing_trading_days('adj_factor', 'trade_date', start_date, end_date, pro=pro)
+        if _days is None:
+            _days = []
+            _c = start_date
+            while _c <= end_date:
+                _days.append(_c)
+                _c = next_day(_c)
+        for current in _days:
             try:
                 df = pro.adj_factor(start_date=current, end_date=current)
                 if df is not None and len(df) > 0:
@@ -365,7 +423,6 @@ def update_adj_factor(pro):
                     break
                 else:
                     print(f"  {current}: {err_str[:60]}")
-            current = next_day(current)
             time.sleep(0.15)
         db.execute("CHECKPOINT")
     finally:
@@ -594,8 +651,15 @@ def update_stk_limit(pro):
     db = get_db_writable()
     try:
         total = 0
-        current = start_date
-        while current <= end_date:
+        # 2026-09-27 日历循环(trade_cal 权威): 休市日不拉(09-25 调休误报复盘)
+        _days = _missing_trading_days('stk_limit', 'trade_date', start_date, end_date, pro=pro)
+        if _days is None:
+            _days = []
+            _c = start_date
+            while _c <= end_date:
+                _days.append(_c)
+                _c = next_day(_c)
+        for current in _days:
             try:
                 df = pro.query('stk_limit', trade_date=current)
                 if df is not None and len(df) > 0:
@@ -610,7 +674,6 @@ def update_stk_limit(pro):
                     break
                 else:
                     print(f"  {current}: {err_str[:60]}")
-            current = next_day(current)
             time.sleep(0.15)
         db.execute("CHECKPOINT")
     finally:
@@ -637,8 +700,15 @@ def update_moneyflow(pro):
     db = get_db_writable()
     try:
         total = 0
-        current = start_date
-        while current <= end_date:
+        # 2026-09-27 日历循环(trade_cal 权威): 休市日不拉(09-25 调休误报复盘)
+        _days = _missing_trading_days('moneyflow_raw', 'trade_date', start_date, end_date, pro=pro)
+        if _days is None:
+            _days = []
+            _c = start_date
+            while _c <= end_date:
+                _days.append(_c)
+                _c = next_day(_c)
+        for current in _days:
             try:
                 df = pro.query('moneyflow', trade_date=current)
                 if df is not None and len(df) > 0:
@@ -661,7 +731,6 @@ def update_moneyflow(pro):
                         print(f"  {current}: 重试失败：{e2}")
                 else:
                     print(f"  {current}: {err_str[:60]}")
-            current = next_day(current)
             time.sleep(0.12)
         db.execute("CHECKPOINT")
     finally:
@@ -713,6 +782,13 @@ def update_stk_factor(pro):
                 # 2026-08-08 上游延迟重试: stk_factor_pro 当天因子 tushare 端可能未算完
                 # (08-07 实盘: 16:00 返回空 → 08-07 0 行 → 周末信号用滞后1天因子)。
                 # 空或行数<5000(未算完, 与缺口回补同阈值)时等待 60s 重试, 最多 3 次。
+                # 2026-09-27 休市短路(09-25 调休误报复盘): 休市日 0 行是常态，先查
+                # ledger.db trade_cal 权威日历，非交易日直接 continue，不干等 3×60s。
+                from core.trade_calendar import is_trading_date
+                if not is_trading_date(current):
+                    print(f"  {current}: 休市日(trade_cal 权威)，跳过")
+                    current = next_day(current)
+                    continue
                 df = pro.stk_factor_pro(trade_date=current)
                 for _retry in range(3):
                     if df is not None and len(df) >= 5000:
@@ -787,20 +863,45 @@ def update_stk_factor(pro):
             current = next_day(current)
             time.sleep(0.12)
 
-        # ── 缺口回补 (2026-08-04 新增): 按 daily 交易日历检查, 行数<5000的日期重拉 ──
+        # ── 缺口回补 (2026-08-04 新增): 按权威日历检查, 行数<5000的日期重拉 ──
         # 背景: 08-03 tushare端当天未算完只返回1367行, 08-04 0行; 增量逻辑从不回补→缺口残留。
-        # 次日再跑时 tushare 端已全量, 此处幂等 upsert 自动补全。用 daily 做交易日历,
-        # 覆盖"当日无任何行"的完全缺失 (GROUP BY 查不到行=漏判)。
+        # 次日再跑时 tushare 端已全量, 此处幂等 upsert 自动补全。
+        # 2026-09-27 改 trade_cal 权威日历(09-25 调休误报复盘)：原来用本地 daily 回推
+        # 交易日，日历不可用时休市日(本地 daily 无行)不进回补名单——但**日历可用时**休市
+        # 日的 is_open=0 会把它拉进"应查"名单，由 is_trading_date 短路 skip，不白拉。
+        # ⚠️ 2026-08-05 修复：不能再用 get_db_readonly()——主循环的 db(可写) 已连着 TEMP_DB，
+        # DuckDB 不允许同文件同时开不同 read_only 配置的连接 → "Connection Error" →
+        # 缺口回补从 8/4 加进来从未成功（8/3 一直缺）。直接复用 db（同一可写连接）。
         try:
             cutoff = (datetime.now() - timedelta(days=14)).strftime('%Y%m%d')
-            # ⚠️ 2026-08-05 修复：不能再用 get_db_readonly()——主循环的 db(可写) 已连着 TEMP_DB，
-            # DuckDB 不允许同文件同时开不同 read_only 配置的连接 → "Connection Error: Can't open a connection
-            # to same database file with a different..." → 缺口回补从 8/4 加进来从未成功（8/3 一直缺）。
-            # 直接复用 db（同一可写连接）。
-            trading_days = [r[0] for r in db.execute(
-                "SELECT DISTINCT trade_date FROM daily WHERE trade_date >= ? ORDER BY trade_date",
-                (cutoff,)).fetchall()]
+            trading_days = None
+            try:
+                # 0927: 跨库直查 ledger.db trade_cal（sqlite_scan，0927 实测 <0.2s，
+                # 不另开 sqlite3 连接——避开 08-05 那个同文件双连接坑）
+                trading_days = [str(r[0]) for r in db.execute(
+                    "SELECT cal_date FROM sqlite_scan(?,'trade_cal') "
+                    "WHERE is_open=1 AND cal_date >= ? ORDER BY cal_date",
+                    (str(BASE / 'ledger.db'), cutoff)).fetchall()]
+            except Exception:
+                trading_days = None
+            if not trading_days:
+                # 0927 修：日历不可用时不能回退本地 daily（daily 恰是要补的表，
+                # 休市日无行会误当交易日/真缺日反被跳）——用逐日盲拉兜底
+                _d = cutoff
+                trading_days = []
+                end_ymd = datetime.now().strftime('%Y%m%d')
+                while _d <= end_ymd:
+                    trading_days.append(_d)
+                    _d = next_day(_d)
+            _today_ymd = datetime.now().strftime('%Y%m%d')
             for rdate in trading_days:
+                # 0927 修(冒烟实测): 未来交易日无数据属正常，不回补不白拉
+                # (原逻辑 0928/0929/0930… 一路白等 2×60s/天，直到日历尾 20270129)
+                if rdate > _today_ymd:
+                    continue
+                # 当天不重试：盘后 tushare 因子常常还没算完，白等 2×60s 无意义，
+                # 缺口回补次日再跑时幂等补齐（0927 冒烟后定，与上方未来日短路同纪律）
+                _max_retry = 0 if rdate == _today_ymd else 2
                 n = db.execute(
                     "SELECT COUNT(*) FROM stk_factor WHERE trade_date = ?", (rdate,)).fetchone()[0]
                 if n >= 5000:
@@ -809,8 +910,13 @@ def update_stk_factor(pro):
                 try:
                     import pandas as pd  # 2026-08-05: 函数内其他 import 使其成局部变量，此处必须显式 import
                     # 2026-08-08 回补重试: 拉取后仍 <5000(上游未算完)时等待 60s 重试, 最多 2 次
+                    # 2026-09-27 休市短路: 休市日 0 行是常态，先查权威日历，非交易日 skip 不重试
+                    from core.trade_calendar import is_trading_date
+                    if not is_trading_date(rdate):
+                        print(f"  {rdate}: 休市日(trade_cal 权威)，跳过回补")
+                        continue
                     df = pro.stk_factor_pro(trade_date=rdate)
-                    for _retry in range(2):
+                    for _retry in range(_max_retry):
                         if df is not None and len(df) >= 5000:
                             break
                         print(f"  {rdate}: 回补上游未算完({0 if df is None else len(df)} 行), 60s 后重试 {_retry+1}/2...")
@@ -883,8 +989,15 @@ def update_stk_factor_pro(pro):
     db = get_db_writable()
     try:
         total = 0
-        current = start_date
-        while current <= end_date:
+        # 2026-09-27 日历循环(trade_cal 权威): 休市日不拉(09-25 调休误报复盘)
+        _days = _missing_trading_days('stk_factor_pro_v2', 'trade_date', start_date, end_date, pro=pro)
+        if _days is None:
+            _days = []
+            _c = start_date
+            while _c <= end_date:
+                _days.append(_c)
+                _c = next_day(_c)
+        for current in _days:
             try:
                 df = pro.stk_factor_pro(trade_date=current)
                 if df is not None and len(df) > 0:
@@ -907,7 +1020,6 @@ def update_stk_factor_pro(pro):
                         print(f"  {current}: 重试失败：{e2}")
                 else:
                     print(f"  {current}: {err_str[:60]}")
-            current = next_day(current)
             time.sleep(0.12)
         db.execute("CHECKPOINT")
     finally:
@@ -964,7 +1076,10 @@ def update_stock_basic(pro):
 
 
 def update_etf(pro):
-    """更新 ETF 数据（fund_basic + fund_daily）"""
+    """更新 ETF 数据（fund_basic + fund_daily）
+    2026-09-27 休市短路（09-25 调休误报复盘）：区间含休市日且区间末是休市日时，
+    先查 ledger.db trade_cal 权威日历——最后交易日 >= 本地最新则休市属正常，跳过不拉。
+    有缺口时仍走原区间拉取 + DELETE+REINSERT（自带历史修正语义，不改）。"""
     print("\n=== 11. ETF (基金数据) ===")
     db = get_db_readonly()
     db.execute("CREATE TABLE IF NOT EXISTS fund_basic (ts_code VARCHAR PRIMARY KEY, name VARCHAR, fund_type VARCHAR, list_date VARCHAR, found_date VARCHAR, market VARCHAR, invest_type VARCHAR)")
@@ -987,6 +1102,12 @@ def update_etf(pro):
                 start = str(next_day(latest)) if latest else '20250101'
                 end = __import__('datetime').datetime.now().strftime('%Y%m%d')
                 if start > end: continue
+                # 休市短路：区间末非交易日（周末/节假日）→ 用日历判"最后交易日"是否已达本地最新
+                from core.trade_calendar import is_trading_date
+                if not is_trading_date(end):
+                    _tds = _missing_trading_days('fund_daily', 'trade_date', start, end, pro=pro) or []
+                    if not _tds or _tds[-1] <= latest:
+                        continue  # 无真实交易日缺口（休市），不浪费 API 调用
                 df2 = pro.fund_daily(ts_code=c, start_date=start, end_date=end)
                 if df2 is not None and len(df2) > 0:
                     dbw.execute('DELETE FROM fund_daily WHERE ts_code=? AND trade_date>=?', (c, start))

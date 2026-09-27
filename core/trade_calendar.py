@@ -85,6 +85,26 @@ def is_trading_day(now: datetime = None) -> bool:
         conn.close()
 
 
+def is_trading_date(ymd: str) -> bool:
+    """⚠️ 与 is_trading_day(now) 不同：回答"任意历史/未来日期 ymd(YYYYMMDD) 是否交易日"。
+    数据更新链按天循环拉数用它跳过休市日（09-27 加：休市日对 0 行误判"上游未算完"
+    干等 3×60s 重试，09-25 事故复盘）。缓存缺该日 → 自动 _refresh 拉 [当年1/1, 次年1/31]。
+    缓存和 API 都查不到 → 返回 True（保守：当作交易日照常拉，不静默漏数）。"""
+    d = str(ymd).replace('-', '')
+    conn = sqlite3.connect(str(LEDGER_DB), timeout=30)
+    try:
+        _ensure_table(conn)
+        row = conn.execute("SELECT is_open FROM trade_cal WHERE cal_date=?", (d,)).fetchone()
+        if row is None:
+            _refresh(conn, f'{d[:4]}0101', f'{int(d[:4]) + 1}0131')
+            row = conn.execute("SELECT is_open FROM trade_cal WHERE cal_date=?", (d,)).fetchone()
+        if row is None:
+            return True
+        return row[0] == 1
+    finally:
+        conn.close()
+
+
 def assert_trading_day(tag: str = ''):
     """非交易日：打日志并退出进程（exit 0，cron 记 completed，不算失败）。"""
     now = datetime.now()

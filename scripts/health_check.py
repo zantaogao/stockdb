@@ -186,17 +186,25 @@ today = datetime.now().strftime('%Y%m%d')
 try:
     import duckdb
     dconn = duckdb.connect(str(tushare_db), read_only=True)  # 修(0927): 只读——健康检查抢dashboard写锁曾致Conflicting lock崩进程，纯查询无需写锁
+    # 2026-09-27 改权威日历：应到日期=最近交易日（trade_cal），替代 gap<=5 粗阈值
+    # （粗阈值遇长假+周末会漏报断链、遇调休又无感；09-25 中秋误报复盘）
+    import sys as _sys
+    _sys.path.insert(0, '/Users/zantao/.hermes/stockdb/scripts')
+    from tradecal_helper import recent_trading_day
+    _exp = recent_trading_day(datetime.now().date())
     # daily 表
     r = dconn.execute("SELECT MAX(trade_date) FROM daily").fetchone()
     if r and r[0]:
         gap = (datetime.now() - datetime.strptime(str(r[0]), '%Y%m%d')).days
-        check(f"  日线数据更新到 {r[0]}", gap <= 5, f"距今 {gap} 天")
+        _ok = datetime.strptime(str(r[0])[:8], '%Y%m%d').date() >= _exp
+        check(f"  日线数据更新到 {r[0]}", _ok, f"距今 {gap} 天, 应到 {_exp:%Y%m%d}")
     else:
         check("日线数据", False, "无数据")
     r2 = dconn.execute("SELECT MAX(trade_date) FROM fund_daily").fetchone()
     if r2 and r2[0]:
         gap2 = (datetime.now() - datetime.strptime(str(r2[0]), '%Y%m%d')).days
-        check(f"  ETF净值更新到 {r2[0]}", gap2 <= 5, f"距今 {gap2} 天")
+        _ok2 = datetime.strptime(str(r2[0])[:8], '%Y%m%d').date() >= _exp
+        check(f"  ETF净值更新到 {r2[0]}", _ok2, f"距今 {gap2} 天, 应到 {_exp:%Y%m%d}")
     dconn.close()
 except Exception as e:
     warn("数据新鲜度检查", str(e))
