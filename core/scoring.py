@@ -23,12 +23,12 @@ def _safe_connect(read_only=True):
     return get_tushare_db(read_only)
 
 # 模型路径
-REG10_MODEL_PATH = MODEL_DIR / 'lgb_reg_10d_v3.txt'
-REG10_STATS_PATH = MODEL_DIR / 'v10_v3_stats.json'
-REG20_MODEL_PATH = MODEL_DIR / 'lgb_reg_20d_mac_v1.txt'
-REG20_STATS_PATH = MODEL_DIR / 'v20_mac_v1_stats.json'
-REG40_MODEL_PATH = MODEL_DIR / 'lgb_reg_40d_new_stkfactor.txt'
-REG40_STATS_PATH = MODEL_DIR / 'v6_norm_stats_40d_tushare_v2_stkfactor.json'
+REG10_MODEL_PATH = MODEL_DIR / 'lgb_reg_10d_v8.txt'   # 0927 v8重训(2019起样本, 31维PV_INDICES同口径)
+REG10_STATS_PATH = MODEL_DIR / 'v10_v8_stats.json'
+REG20_MODEL_PATH = MODEL_DIR / 'lgb_reg_20d_v2.txt'   # 0926重训(带真值ex); 旧mac_v1验证段IC-0.07已退役 models/retired_20260926/
+REG20_STATS_PATH = MODEL_DIR / 'v20_v2_stats.json'
+REG40_MODEL_PATH = MODEL_DIR / 'lgb_reg_40d_v8.txt'   # 0927 v8重训(2019起样本, 26维BASE_KEEP+kdj_k/cci/rsi_12=29维)
+REG40_STATS_PATH = MODEL_DIR / 'v40_v8_stats.json'
 
 # 特征配置（匹配M2训练脚本）
 BASE_KEEP_INDICES = [0,1,2,3,4,5,6,7,8,9,11,12,13,14,15,18,19,20,21,22,23,24,25,26,28,29]
@@ -195,7 +195,13 @@ def _compute_ml_features(code, conn, as_of_date=None):
         get_factor_from_db
     )
     
-    ts_code_full = f"{code}.SH" if code.startswith(('6', '68', '9')) else f"{code}.SZ"
+    # 修复(0926): 北交所(9开头)在 daily 里后缀是 .BJ，旧版硬编码 .SH → 347只北交所票日线0行、从未被打分
+    if code.startswith('9'):
+        ts_code_full = f"{code}.BJ"
+    elif code.startswith(('6', '68')):
+        ts_code_full = f"{code}.SH"
+    else:
+        ts_code_full = f"{code}.SZ"
     
     # 读取日线数据（可按日期过滤）
     date_filter = f"AND trade_date <= '{as_of_date}'" if as_of_date else ''
@@ -229,11 +235,16 @@ def _compute_ml_features(code, conn, as_of_date=None):
     board_idx = get_board_index(code)
     idx_info = idx_data.get(board_idx)
     idx_closes = None
-    if idx_info and dates_str[-1] in idx_info['dict']:
+    if idx_info:
         import bisect
-        ip = bisect.bisect_left(idx_info['dates'], dates_str[-1])
-        if ip >= 20 and ip < len(idx_info['dates']):
-            idx_closes = [idx_info['dict'][idx_info['dates'][j]] for j in range(ip + 1)]
+        # 修复(0926): daily.trade_date 无横杠('20260924')，index_daily 日期带横杠('2026-09-24')，
+        # 旧版 `dates_str[-1] in idx_info['dict']` 恒 False → ex5/ex10/ex20 生产恒 0。
+        # 统一去横杠比较（idx dates 排序不受影响，bisect 目标用同格式切片对齐）。
+        _q = dates_str[-1].replace('-', '')
+        _dates_nodash = [dd.replace('-', '') for dd in idx_info['dates']]
+        ip = bisect.bisect_right(_dates_nodash, _q) - 1
+        if ip >= 20:
+            idx_closes = {idx_info['dates'][j]: idx_info['dict'][idx_info['dates'][j]] for j in range(ip + 1)}
     
     # 估值 (从 daily_basic 查，用 ts_code 格式；历史回算时按 as_of_date 过滤防未来泄漏)
     val_cond = "AND trade_date <= ?" if as_of_date else ""
@@ -249,8 +260,8 @@ def _compute_ml_features(code, conn, as_of_date=None):
         if pb and float(pb) > 0: val_dict['bp'] = 1.0 / float(pb)
         if mv and float(mv) > 0: val_dict['ln_cap'] = np.log(float(mv))
     
-    # 30基础特征
-    feat = compute_features(adj_closes, adj_highs, adj_lows, volumes, pcts, idx_closes, val_dict)
+    # 30基础特征（0927: 传个股日期序列, ex5/10/20 新口径按个股日历回看）
+    feat = compute_features(adj_closes, adj_highs, adj_lows, volumes, pcts, idx_closes, val_dict, dates=dates_str)
     
     # 选择26个基础特征
     feat_selected = np.array([feat[i] for i in BASE_KEEP_INDICES], dtype=np.float64)
@@ -316,11 +327,12 @@ def score_stock(code, rows=None, conn=None, as_of_date=None):
         except Exception as e:
             print(f"  [scoring] {code} 10d预测失败: {e}")
 
-    # 20d预测
+    # 20d预测（v2: 0926重训，31维 PV_INDICES 口径 = 与10d同一列序；旧29维mac_v1退役 models/retired_20260926/）
     reg20_pred = 0.0
     if _reg20_model is not None and _stats20:
         try:
-            f20 = _standardize(feat_29, _stats20)
+            f20 = np.array([feat_38[j] for j in PV_INDICES], dtype=np.float64).reshape(1, -1)
+            f20 = _standardize(f20, _stats20)
             f20 = np.nan_to_num(f20, nan=0.0)
             reg20_pred = float(_reg20_model.predict(f20)[0])
         except Exception as e:
@@ -330,7 +342,21 @@ def score_stock(code, rows=None, conn=None, as_of_date=None):
     reg40_pred = 0.0
     if _reg40_model is not None and _stats40:
         try:
-            f40 = _standardize(feat_29, _stats40)
+            # v8 口径(0927重训, 2019起样本): BASE_KEEP 26维 + stk_factor(kdj_k,cci,rsi_12) = 29维
+            # 与训练脚本 _cron_retrain_build_v8_2019_0927.py 同式（同 clip+standardize stats）
+            keep26 = [float(feat_38[j]) for j in BASE_KEEP_INDICES]
+            ts_code = f"{code}.SH" if code.startswith(('6','68')) else (f"{code}.BJ" if code.startswith('9') else f"{code}.SZ")
+            fac = [0.0, 0.0, 0.0]
+            try:
+                row_fac = conn.execute(
+                    "SELECT kdj_k, cci, rsi_12 FROM stk_factor WHERE ts_code = ? ORDER BY trade_date DESC LIMIT 1",
+                    [ts_code]).fetchone()
+                if row_fac:
+                    fac = [float(v) if v is not None else 0.0 for v in row_fac]
+            except Exception:
+                pass
+            f40 = np.array(keep26 + fac, dtype=np.float64).reshape(1, -1)
+            f40 = _standardize(f40, _stats40)
             f40 = np.nan_to_num(f40, nan=0.0)
             reg40_pred = float(_reg40_model.predict(f40)[0])
         except Exception as e:
@@ -339,8 +365,10 @@ def score_stock(code, rows=None, conn=None, as_of_date=None):
     if own_conn:
         conn.close()
     
-    # 融合: 10d×20% + 20d×30% + 40d×50%（2026-08-03 权重回测：40d 实盘最稳，权重 25%→50%）
-    fusion = reg10_pred * 0.20 + reg20_pred * 0.30 + reg40_pred * 0.50  # 2026-08-03 权重回测调整: 40d 权重 25%→50%（7天实盘 IC 单调最优，baseline 接近最差）
+    # 融合(0927 用户拍板 v8): 0.25×reg10 + 0.75×reg40（reg20 剔除出融合分，字段照旧落库仅供观察）。
+    # 依据: 344评估日 日均IC差 +0.0101 NW-t(lag5)=3.57; 三臂回测 生产-3.5%→v8融合+14.1%全段年化(B臂同卖法).
+    # 旧公式: 20d×0.375+40d×0.625(0927上午); 更旧 10×0.20+20×0.30+40×0.50(0803)。
+    fusion = reg10_pred * 0.25 + reg40_pred * 0.75
 
     return {
         'reg_pred': round(reg20_pred, 1),      # 20d预测百分数

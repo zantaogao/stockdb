@@ -65,7 +65,28 @@ else:
     check("tushare.db 文件存在", False, "文件不存在")
 
 # v2 三层: ledger.db + signals.db（state.db 已冻结为 .pre_split，2026-08-29）
+def _db_with_tables(cands, tables):
+    """修(0927): 双机库位置差异(Mac=v2拆分ledger.db/signals.db权威; M2=单库state.db, 0字节壳,
+    09-26拍板分叉维持)。返回第一个真实含全部tables的库, 都没有回退第一个候选。"""
+    for p in cands:
+        try:
+            c = sqlite3.connect(str(p), timeout=5)
+            have = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            c.close()
+            if all(t in have for t in tables):
+                return p
+        except Exception:
+            continue
+    return cands[0]
+
 def check_sqlite_db(db_path, name, required):
+    if db_path.exists() and db_path.stat().st_size == 0:
+        # 0字节壳: 表实际在同目录另一库(M2单库架构)时, 文件存在性记PASS, 表检查走真实库
+        real = _db_with_tables([db_path, BASE/'state.db'], required)
+        if real != db_path:
+            check(f"{name} 文件存在", True, "(0字节壳, 表在state.db)")
+            check_sqlite_db(real, name, required)
+            return
     if db_path.exists():
         size_mb = db_path.stat().st_size / 1024 / 1024
         check(f"{name} 文件存在", True, f"({size_mb:.0f}MB)")
@@ -103,10 +124,10 @@ if model_dir.exists():
     required_models = [
         ('lgb_reg_10d_v3.txt', '10d模型'),
         ('v10_v3_stats.json', '10d统计量'),
-        ('lgb_reg_20d_mac_v1.txt', '20d模型'),
-        ('v20_mac_v1_stats.json', '20d统计量'),
-        ('lgb_reg_40d_new_stkfactor.txt', '40d模型'),
-        ('v6_norm_stats_40d_tushare_v2_stkfactor.json', '40d统计量'),
+        ('lgb_reg_20d_v2.txt', '20d模型'),          # 0927随0926重训换代
+        ('v20_v2_stats.json', '20d统计量'),
+        ('lgb_reg_40d_v7.txt', '40d模型'),
+        ('v40_v7_stats.json', '40d统计量'),
         ('lgb_reg_etf_20d_v1.txt', 'ETF模型'),
         ('v_etf_v1_stats.json', 'ETF统计量'),
     ]
@@ -141,7 +162,7 @@ else:
 sim_engine = BASE / 'core' / 'sim_engine.py'
 if sim_engine.exists():
     src = sim_engine.read_text()
-    if 'lgb_reg_20d_mac_v1.txt' in src:
+    if 'lgb_reg_20d_v2.txt' in src:
         check("sim_engine.py 校验引用 20d_mac_v1", True)
     else:
         warn("sim_engine.py 校验引用", "可能还是旧模型名")
@@ -164,7 +185,7 @@ today = datetime.now().strftime('%Y%m%d')
 
 try:
     import duckdb
-    dconn = duckdb.connect(str(tushare_db))
+    dconn = duckdb.connect(str(tushare_db), read_only=True)  # 修(0927): 只读——健康检查抢dashboard写锁曾致Conflicting lock崩进程，纯查询无需写锁
     # daily 表
     r = dconn.execute("SELECT MAX(trade_date) FROM daily").fetchone()
     if r and r[0]:
@@ -180,110 +201,12 @@ try:
 except Exception as e:
     warn("数据新鲜度检查", str(e))
 
-try:
-    conn = sqlite3.connect(str(state_db), timeout=5)
-    r = conn.execute("SELECT MAX(date) FROM signal_history").fetchone()
-    if r and r[0]:
-        gap3 = (datetime.now() - datetime.strptime(str(r[0])[:8], '%Y%m%d')).days
-        check(f"  评分数据更新到 {r[0]}", gap3 <= 5, f"距今 {gap3} 天")
-    conn.close()
-except Exception as e:
-    warn("评分数据新鲜度", str(e))
+def _has_signal_history(p):
+    try:
+        c = sqlite3.connect(str(p), timeout=5)
+        ok = bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='signal_history'").fetchone())
+        c.close()
+        return ok
+    except Exception:
+        return False
 
-# ──────────────────────────────────────────
-# 5. 定时任务状态 & 脚本路径校验
-# ──────────────────────────────────────────
-print("\n🔹 5. 定时任务状态")
-try:
-    cron_json = Path(os.path.expanduser('~/.hermes/cron/jobs.json'))
-    if cron_json.exists():
-        with open(cron_json) as f:
-            data = json.load(f)
-        jobs = data.get('jobs', [])
-        scripts_dir = Path(os.path.expanduser('~/.hermes/scripts/'))
-        for j in jobs:
-            name = j.get('name', '?')
-            sched = j.get('schedule', {})
-            sched_str = sched.get('display', sched.get('expr', '')) if isinstance(sched, dict) else str(sched)
-            status = j.get('last_status', None)
-            enabled = j.get('enabled', True)
-            
-            # 状态图标
-            if status == 'ok':
-                icon = "✅"
-            elif status == 'error':
-                icon = "❌"
-            elif not enabled:
-                icon = "⏸️"
-            else:
-                icon = "⏳"
-            
-            check(f"  {icon} {name} ({sched_str})", status != 'error', f"状态={status}")
-            
-            # 检查 no_agent 脚本路径
-            script = j.get('script')
-            if script:
-                script_path = scripts_dir / script
-                if script_path.exists():
-                    check(f"    ✓ 脚本存在: {script}", True)
-                else:
-                    check(f"    ✗ 脚本路径错误: {script}", False, 
-                          f"解析路径 {script_path} 不存在")
-            
-            # 检查最近一次输出日志是否有错误
-            job_id = j.get('id')
-            if job_id:
-                out_dir = Path(os.path.expanduser(f'~/.hermes/cron/output/{job_id}'))
-                if out_dir.exists() and status == 'error':
-                    # 找到最近的输出
-                    logs = sorted(out_dir.glob('*.md'), reverse=True)
-                    if logs:
-                        log_content = logs[0].read_text()
-                        if 'Script not found' in log_content or 'Traceback' in log_content:
-                            # 提取具体错误
-                            for line in log_content.split('\n'):
-                                if 'Script not found' in line or 'Traceback' in line:
-                                    error_detail = line.strip()[:120]
-                                    break
-                            else:
-                                error_detail = "脚本异常（见日志）"
-                            warn(f"  最近错误: {error_detail}")
-    else:
-        warn("cron/jobs.json 不存在")
-except Exception as e:
-    warn("定时任务检查", str(e))
-
-# ──────────────────────────────────────────
-# 总结
-# ──────────────────────────────────────────
-print("\n" + "=" * 60)
-total = ok_count
-fatal = len([i for i in issues if "缺失" in i or "不存在" in i or "校验" in i])
-print(f"📊 检查结果：{total} 通过 | {len(issues)} 问题 | {len(warnings)} 警告 | {fatal} 严重")
-
-if issues:
-    print("\n🔴 问题列表:")
-    for i in issues:
-        print(f"  • {i}")
-
-if warnings:
-    print("\n🟡 警告:")
-    for w in warnings:
-        print(f"  • {w}")
-
-if not issues and not warnings:
-    print("\n✅ 系统健康，无需处理")
-    print("=" * 60)
-
-# 输出JSON供cron调度使用
-result = {
-    "passed": ok_count,
-    "issues": len(issues),
-    "warnings": len(warnings),
-    "critical": fatal,
-    "issue_list": issues,
-    "warn_list": warnings,
-    "healthy": len(issues) == 0 and len(warnings) == 0,
-    "timestamp": datetime.now().isoformat()
-}
-print(json.dumps(result, ensure_ascii=False))

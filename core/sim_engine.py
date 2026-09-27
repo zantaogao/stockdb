@@ -848,7 +848,7 @@ def check_all() -> dict:
 
     # 3. 模型文件
     model_dir = BASE / 'models'
-    required_models = ['lgb_reg_20d_mac_v1.txt', 'lgb_reg_40d_new_stkfactor.txt']
+    required_models = ['lgb_reg_20d_v2.txt', 'lgb_reg_40d_v7.txt']  # 修(0927): 随0926重训换代(mac_v1/new_stkfactor已退役retired_)
     missing_models = []
     for m in required_models:
         if not (model_dir / m).exists():

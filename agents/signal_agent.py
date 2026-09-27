@@ -124,7 +124,13 @@ def get_all_stocks() -> List[Dict]:
 def scan_stock(code_info: Dict, target_date: str = None, conn=None) -> Optional[Dict]:
     """扫描单只股票，返回评分结果"""
     code = code_info['stock_code']
-    ts_code = f"{code}.SH" if code.startswith(('6', '68', '9')) else f"{code}.SZ"
+    # 修复(0926): 北交所(9开头)在 tushare 表中后缀是 .BJ，旧写法映射到 .SH
+    if code.startswith('9'):
+        ts_code = f"{code}.BJ"
+    elif code.startswith(('6', '68')):
+        ts_code = f"{code}.SH"
+    else:
+        ts_code = f"{code}.SZ"
     own_conn = conn is None
     if own_conn:
         import duckdb
@@ -236,7 +242,7 @@ def scan_stock(code_info: Dict, target_date: str = None, conn=None) -> Optional[
         'v8_score': scores.get('fusion', scores.get('reg20_pred', scores['reg_pred'])),  # 用融合分做百分位排名
         'final_score': 0,
         'fusion_avg': 0,
-        'reg20': scores['reg_pred'],
+        'reg20': scores.get('reg20_pred', scores['reg_pred']),  # 修(0927): 显式接20d预测;旧版接reg_pred在20d维度失败时落0
         'reg40': scores.get('reg40_pred', 0),
         'reg10': scores.get('reg10_pred', 0),  # 修复：用实际值
         'lstm': 50,

@@ -5,9 +5,30 @@
   2. 复制：最近两天同股票数值 100% 相同 → 疑似复制（7/30=7/29 事件）
 输出 PASS/FAIL，FAIL 需要 cron 分析修复。
 """
-import sqlite3, sys
+import json, sqlite3, sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
+
+# ── 真实交易日历（2026-09-26 新增）──
+# 原 recent_trading_day() 只跳周末 → 法定节假日（如 2026-09-25 中秋）必报假 FAIL。
+# 日历来自 scripts/gen_trade_cal.py（tushare trade_cal → data/trade_cal.json），
+# **独立于 signals.db/ledger.db/tushare.db**：不能用 daily MAX 当基准，否则数据链整体断掉时预期会一起塌陷 → 漏报断链。
+TRADE_CAL_FILE = Path(__file__).resolve().parent.parent / 'data' / 'trade_cal.json'
+
+
+def _load_trade_cal():
+    try:
+        with open(TRADE_CAL_FILE) as f:
+            cal = json.load(f)
+        s = set(cal.get('is_open_dates') or [])
+        if s:
+            return s, tuple(cal.get('range') or (None, None))
+    except Exception:
+        pass
+    return None, (None, None)
+
+
+_TRADE_CAL, _CAL_RANGE = _load_trade_cal()
 
 STATE_DB = Path(__file__).resolve().parent.parent / 'signals.db'  # v2温层
 
@@ -27,7 +48,24 @@ TABLES = {
 }
 
 def recent_trading_day(d):
-    """最近交易日：从 d 往前找周一至周五"""
+    """最近交易日：优先查真实交易日历（含法定节假日）；日历缺失/未覆盖时回退"跳过周末"。
+    ⚠️ 2026-09-26：原实现只跳周末 → 中秋(2026-09-25)等节假日必报假 FAIL（同日 3 表误报）。
+    日历独立于 signals.db/ledger.db/tushare.db，故"数据链整体断掉"仍能正确 FAIL。
+    """
+    ds = d.strftime('%Y%m%d')
+    if _TRADE_CAL:
+        lo, hi = _CAL_RANGE if _CAL_RANGE else (None, None)
+        if lo and (ds < lo or ds > hi):
+            print(f'  WARN 交易日历未覆盖 {ds}（range {lo}~{hi}）→ 回退周末近似，请重跑 scripts/gen_trade_cal.py')
+        else:
+            steps = 0
+            while ds not in _TRADE_CAL and steps < 60:
+                d -= timedelta(days=1)
+                ds = d.strftime('%Y%m%d')
+                steps += 1
+            if ds in _TRADE_CAL:
+                return d
+            print('  WARN 交易日历回溯 60 天未命中（日历可能损坏）→ 回退周末近似')
     while d.weekday() >= 5:
         d -= timedelta(days=1)
     return d

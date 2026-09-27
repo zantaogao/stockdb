@@ -25,8 +25,8 @@ STATE_DB = BASE / 'signals.db'  # v2温层
 # 10d/7天、20d/14天、40d/30天；40d 训练最重（10年671万样本）间隔最长
 ACTIVE_MODELS = [
     ('lgb_reg_10d_v3.txt',            '10d v3',        7),
-    ('lgb_reg_20d_mac_v1.txt',        '20d mac_v1',   14),
-    ('lgb_reg_40d_new_stkfactor.txt', '40d new_stkfactor', 30),
+    ('lgb_reg_20d_v2.txt',            '20d v2',       14),  # 0927随0926重训换代
+    ('lgb_reg_40d_v7.txt',            '40d v7',       30),
     ('lgb_reg_etf_20d_v1.txt',        'ETF 20d v1',   30),
 ]
 MAX_AGE_URGENT = 60

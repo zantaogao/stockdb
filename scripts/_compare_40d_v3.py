@@ -45,7 +45,7 @@ def normalize_batch(X, s):
     return np.nan_to_num(Xn, nan=0.0)
 
 models = {
-    '旧(生产)': ('lgb_reg_40d_new_stkfactor.txt', 'v6_norm_stats_40d_tushare_v2_stkfactor.json'),
+    '旧(生产)': ('retired_20260926/lgb_reg_40d_new_stkfactor.txt','retired_20260926/v6_norm_stats_40d_tushare_v2_stkfactor.json'),
     'v2(5000树)': ('lgb_reg_40d_mac_v2.txt', 'v40_mac_v2_stats.json'),
     'v3(2076树)': ('lgb_reg_40d_mac_v3.txt', 'v40_mac_v3_stats.json'),
 }
@@ -70,7 +70,7 @@ print('\n=== v3 因子重要性（对比旧模型）===')
 m3 = lgb.Booster(model_file=str(BASE / 'models/lgb_reg_40d_mac_v3.txt'))
 imp3 = m3.feature_importance('gain')
 factor3 = sum(imp3[26:29]) / imp3.sum() * 100
-m_old = lgb.Booster(model_file=str(BASE / 'models/lgb_reg_40d_new_stkfactor.txt'))
+m_old = lgb.Booster(model_file=str(BASE / 'models/retired_20260926/lgb_reg_40d_new_stkfactor.txt'))
 imp_old = m_old.feature_importance('gain')
 factor_old = sum(imp_old[26:29]) / imp_old.sum() * 100
 print(f'  旧模型因子权重: {factor_old:.1f}% | v3 因子权重: {factor3:.1f}%')

@@ -164,7 +164,13 @@ def get_factor_from_db(code, dt_clean, factor_fields, conn):
     """
     import os
     if os.environ.get('SELF_IND') == '1':
-        ts_code_full0 = f"{code}.SH" if code.startswith(('6', '68', '9')) else f"{code}.SZ"
+        # 修复(0926): 北交所(9开头)在 tushare 表中后缀是 .BJ，旧写法映射到 .SH → 因子恒 0
+        if code.startswith('9'):
+            ts_code_full0 = f"{code}.BJ"
+        elif code.startswith(('6', '68')):
+            ts_code_full0 = f"{code}.SH"
+        else:
+            ts_code_full0 = f"{code}.SZ"
         _sv = _get_self_factor(ts_code_full0, dt_clean, factor_fields)
         if _sv is not None:
             return _sv
@@ -172,7 +178,13 @@ def get_factor_from_db(code, dt_clean, factor_fields, conn):
         # 静默混用会产生无法归因的评分漂移（2026-08-26 对拍口径）。
         print(f"  ⚠️ SELF_IND回退: {ts_code_full0} {dt_clean} 自算指标缺失, 本只用 stk_factor 口径")
     import json
-    ts_code_full = f"{code}.SH" if code.startswith(('6', '68', '9')) else f"{code}.SZ"
+    # 修复(0926): 北交所(9开头)在 tushare 表中后缀是 .BJ，旧写法映射到 .SH → 因子恒 0
+    if code.startswith('9'):
+        ts_code_full = f"{code}.BJ"
+    elif code.startswith(('6', '68')):
+        ts_code_full = f"{code}.SH"
+    else:
+        ts_code_full = f"{code}.SZ"
     
     def _resolve(extra_dict, f):
         """在 extra JSON 里解析因子 f 的 _bfq 值"""
@@ -285,12 +297,13 @@ def compute_rsi(close, period=14):
 
 # ── 特征计算（核心：与retrain_20d_fixed.py完全一致） ──
 
-def compute_features(closes, highs, lows, volumes, pcts, idx_close_dict, val_dict):
+def compute_features(closes, highs, lows, volumes, pcts, idx_close_dict, val_dict, dates=None):
     """计算38个基础特征，顺序与retrain_20d_fixed.py完全一致
     
     closes/highs/lows/volumes/pcts: numpy数组（窗口内全部历史）
     idx_close_dict: {date_str: close} 指数收盘数据（上证指数）
     val_dict: {'ep': float, 'bp': float, 'ln_cap': float}
+    dates: 窗口内日期序列(与closes等长, 0927新ex口径必需; 缺省时ex退化为chg)
     
     Returns: np.array of shape (38,)
     """
@@ -347,15 +360,25 @@ def compute_features(closes, highs, lows, volumes, pcts, idx_close_dict, val_dic
     bp = val_dict.get('bp', 0.5)
     ln_cap = val_dict.get('ln_cap', 22.0)
     
-    # ── 23-25: ex5,ex10,ex20 (超额收益 - 对比上证指数) ──
-    if idx_close_dict and len(idx_close_dict) >= 20:
-        all_dates = sorted(idx_close_dict.keys())
-        pos_end = len(all_dates) - 1
-        close_today = idx_close_dict[all_dates[pos_end]]
-        
-        ex5 = chg5 - (close_today / idx_close_dict.get(all_dates[pos_end-5], close_today) - 1) if pos_end >= 5 else 0.0
-        ex10 = chg10 - (close_today / idx_close_dict.get(all_dates[pos_end-10], close_today) - 1) if pos_end >= 10 else 0.0
-        ex20 = chg20 - (close_today / idx_close_dict.get(all_dates[pos_end-20], close_today) - 1) if pos_end >= 20 else 0.0
+    # ── 23-25: ex5,ex10,ex20 (超额收益, 新口径 0927 用户拍板) ──
+    # 基准日=个股窗口日历位置 -5/-10/-20（与 chg5/10/20 同窗口同基准），
+    # 不再用指数日历倒数第5/10/20（旧口径与个股回看日错位，ex 语义失真）。
+    # 指数价按基准日精确查找（idx dict 键=日期），查不到该日则该项=chg（超额视为0）。
+    if idx_close_dict and n >= 20 and dates is not None:
+        all_dates = [str(d) for d in dates]
+        _dashes = '-' in next(iter(idx_close_dict))
+        def _idx_at(pos):
+            d = all_dates[pos]
+            key = f"{d[:4]}-{d[4:6]}-{d[6:8]}" if _dashes and '-' not in d else d
+            return idx_close_dict.get(key)
+        idx_now = _idx_at(n - 1)
+        if idx_now:
+            _b5, _b10, _b20 = _idx_at(n - 5), _idx_at(n - 10), _idx_at(n - 20)
+            ex5 = chg5 - ((idx_now / _b5 - 1) if _b5 else 0.0)
+            ex10 = chg10 - ((idx_now / _b10 - 1) if _b10 else 0.0)
+            ex20 = chg20 - ((idx_now / _b20 - 1) if _b20 else 0.0)
+        else:
+            ex5 = ex10 = ex20 = 0.0
     else:
         ex5 = ex10 = ex20 = 0.0
     

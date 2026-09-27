@@ -82,8 +82,8 @@ except Exception as e:
 c.close()
 
 # 7. 模型链
-for m in ["lgb_reg_10d_v3.txt", "lgb_reg_20d_tushare_v13_opt.txt", "lgb_reg_20d_mac_v1.txt",
-          "lgb_reg_40d_new_stkfactor.txt", "lgb_reg_etf_20d_v1.txt"]:
+for m in ["lgb_reg_10d_v3.txt", "lgb_reg_20d_tushare_v13_opt.txt", "lgb_reg_20d_v2.txt",
+          "lgb_reg_40d_v7.txt", "lgb_reg_etf_20d_v1.txt"]:  # 0927随0926重训换代
     p = os.path.join(BASE, "models", m)
     if os.path.exists(p):
         print(f"[model] {m}: {os.path.getsize(p):,}B")

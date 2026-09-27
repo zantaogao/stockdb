@@ -61,8 +61,8 @@ s_new = json.load(open(str(BASE / 'models/v40_mac_v2_stats.json')))
 preds_new = m_new.predict(normalize_batch(X, s_new))
 
 # 旧模型 + 旧 stats
-m_old = lgb.Booster(model_file=str(BASE / 'models/lgb_reg_40d_new_stkfactor.txt'))
-s_old = json.load(open(str(BASE / 'models/v6_norm_stats_40d_tushare_v2_stkfactor.json')))
+m_old = lgb.Booster(model_file=str(BASE / 'models/retired_20260926/lgb_reg_40d_new_stkfactor.txt'))
+s_old = json.load(open(str(BASE / 'models/retired_20260926/v6_norm_stats_40d_tushare_v2_stkfactor.json')))
 preds_old = m_old.predict(normalize_batch(X, s_old))
 
 # 对比
