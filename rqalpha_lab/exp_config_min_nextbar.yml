@@ -1,0 +1,19 @@
+# Task 3.4 分钟撮合配置：1m + stockdb_min mod 装饰数据源
+base:
+  frequency: '1m'
+  accounts:
+    stock: 100000
+  data_bundle_path: /Users/zantao/.hermes/stockdb/rqalpha_lab/bundle
+mod:
+  stockdb_min:
+    enabled: true
+  sys_analyser:
+    enabled: true
+    plot: false
+  sys_simulation:
+    enabled: true
+    matching_type: next_bar
+  sys_transaction_cost:
+    enabled: true
+extra:
+  system_log: info
