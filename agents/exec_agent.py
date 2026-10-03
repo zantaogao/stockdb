@@ -666,6 +666,12 @@ def execute_order(order: Dict, account: Account, ds: DS) -> Dict:
         result['status'] = 'ERROR'
         result['error'] = str(e)
     
+    # 0928 修复(M2 同款): 成交后 shares 可能已被现金截断(BUY/ADD line392/544)
+    # 或持仓截断(SELL/REDUCE line499/629)，但 result['shares'] 仍是 line381 构造时
+    # 的计划量 → sync_to_db 写 trade_log.quantity 与 amount 口径不一致（301575
+    # 实锤: quantity=6700 而 amount/holdings=6500 股）。成交态单点回写对齐。
+    if result.get('status') == 'EXECUTED':
+        result['shares'] = shares
     result['executed_at'] = datetime.now().isoformat()
     return result
 

@@ -1,0 +1,11 @@
+import sqlite3, duckdb, os
+os.chdir(os.path.expanduser('~/.hermes/stockdb'))
+tdx = duckdb.connect('tushare.db', read_only=True)
+print('index_daily max:', tdx.execute("select max(trade_date) from index_daily_raw where ts_code='000001.SH'").fetchone())
+print('last 3 index rows:', tdx.execute("select trade_date, close from index_daily_raw where ts_code='000001.SH' order by trade_date desc limit 3").fetchall())
+tdx.close()
+s = sqlite3.connect('signals.db')
+print('new_factors max date:', s.execute('select max(date) from new_factors').fetchone())
+print('mr rows today:', s.execute("select * from mean_reversion_signals where date='20261002'").fetchall())
+l = sqlite3.connect('ledger.db')
+print('trade_cal around:', l.execute("select * from trade_cal where trade_date between '20260928' and '20261010' order by trade_date").fetchall() if l.execute("select count(*) from sqlite_master where name='trade_cal'").fetchone()[0] else 'n/a')

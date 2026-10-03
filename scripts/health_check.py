@@ -122,12 +122,12 @@ print("\n🔹 2. 模型文件完整性")
 model_dir = BASE / 'models'
 if model_dir.exists():
     required_models = [
-        ('lgb_reg_10d_v3.txt', '10d模型'),
-        ('v10_v3_stats.json', '10d统计量'),
+        ('lgb_reg_10d_v8.txt', '10d模型'),
+        ('v10_v8_stats.json', '10d统计量'),
         ('lgb_reg_20d_v2.txt', '20d模型'),          # 0927随0926重训换代
         ('v20_v2_stats.json', '20d统计量'),
-        ('lgb_reg_40d_v7.txt', '40d模型'),
-        ('v40_v7_stats.json', '40d统计量'),
+        ('lgb_reg_40d_v8.txt', '40d模型'),
+        ('v40_v8_stats.json', '40d统计量'),
         ('lgb_reg_etf_20d_v1.txt', 'ETF模型'),
         ('v_etf_v1_stats.json', 'ETF统计量'),
     ]
@@ -192,6 +192,9 @@ try:
     _sys.path.insert(0, '/Users/zantao/.hermes/stockdb/scripts')
     from tradecal_helper import recent_trading_day
     _exp = recent_trading_day(datetime.now().date())
+    # 0928修: 应到日在当天更新档(16:00)之后时回退上一交易日——盘前/凌晨跑检查不该催当天数据
+    if _exp == datetime.now().date() and datetime.now().hour < 16:
+        _exp = recent_trading_day(_exp - timedelta(days=1))
     # daily 表
     r = dconn.execute("SELECT MAX(trade_date) FROM daily").fetchone()
     if r and r[0]:

@@ -859,7 +859,7 @@ def check_all() -> dict:
         results["模型文件"] = {"ok": True, "message": "全部存在"}
 
     # 3. 标准化文件
-    norm_files = ['v6_norm_stats.json', 'v6_norm_stats_40d.json', 'v10_norm_stats.json']
+    norm_files = ['norm_stats_v8.json', 'v10_v8_stats.json', 'v40_v8_stats.json']  # 0927审计：原3个文件名从未存在，死引用误报缺失
     missing_norm = []
     for f in norm_files:
         if not (model_dir / f).exists():

@@ -577,10 +577,19 @@ if __name__ == '__main__':
     try:
         import duckdb as _dk
         from core.db import TUSHARE_DB_PATH as _TDB
+        # 2026-10-02 修复：休市日(国庆/中秋等)17:45照跑时，旧逻辑拿"今天"当目标 → 10/2 连续误报
+        # "daily 最新 < 目标"。休市日按库内惯例跳过(exit 0, cron 记 completed 不算失败)。
+        # 日历源与 health_check_scores.py 同源: data/trade_cal.json (tushare trade_cal 生成).
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'scripts'))
+        from tradecal_helper import is_open as _cal_open
+        _today_str = datetime.now().strftime('%Y%m%d')
+        if not args.date and not _cal_open(_today_str):
+            print(f"🚫 休市日（{_today_str}，tushare trade_cal 权威），跳过信号扫描")
+            sys.exit(0)
         _tconn = _dk.connect(str(_TDB), read_only=True)
         _daily_max = _tconn.execute("SELECT MAX(trade_date) FROM daily").fetchone()[0]
         _tconn.close()
-        _target = args.date or datetime.now().strftime('%Y%m%d')
+        _target = args.date or _today_str
         if _daily_max and _daily_max < _target:
             print(f"❌ 数据新鲜度检查失败：daily 最新={_daily_max} < 目标={_target}")
             print("   数据更新可能失败。请先修复数据更新（bash update_data.sh），再重跑扫描。")

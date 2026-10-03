@@ -88,6 +88,15 @@ for r in rows:
         issues.append(f"[对账][质量] {d} {strat or 'main'} {code} {direction} amount={amount} 异常")
     if not ttime and d >= '20260804':
         issues.append(f"[对账][质量] {d} {strat or 'main'} {code} {direction} trade_time缺失")
+    # 0928 新增: quantity×price 与 amount 交叉校验（M2 同款 bug 防线——exec_agent
+    # 现金截量后 result['shares'] 未回写，流水印计划量/金额印实际量。主账户佣金
+    # ±0.03%、策略账户无佣金，1% 容差覆盖费率不误报；301575 案偏差 3% 必抓）
+    if price and quantity and amount:
+        _dev = abs(quantity * price - amount) / amount
+        if _dev > 0.01:
+            issues.append(f"[对账][量金不符] {d} {strat or 'main'} {code} {direction} "
+                          f"quantity={quantity}×{price}={quantity*price:.0f} vs amount={amount:.0f} "
+                          f"(偏差{_dev*100:.1f}%,疑现金截量未回写)")
 
 # ── 2. 重复: 同(code,direction,date,strategy)多条且时间戳不同 ──
 # 2026-09-11 修订：策略账户同日多次 BUY 不报——topup='gap' 口径下窗口内每轮运行

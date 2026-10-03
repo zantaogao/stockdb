@@ -1,0 +1,3 @@
+# 已知销户任务消音清单（cron_job_audit.py 读取，# 开头为注释）
+# 2026-09-30: 外挂专家自动重训看门狗 3265f75f9af3 经用户拍板退役（09-29 EXPERIMENT.md：看门狗保持paused勿resume，路线改检索化 qa_ask.py）
+growth_expert_retrain.py

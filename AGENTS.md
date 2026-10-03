@@ -65,11 +65,11 @@
 
 | 模型 | 文件 | 树数 |
 |------|------|------|
-| 10d v3 | models/lgb_reg_10d_v3.txt | 1679 |
-| 20d mac_v1 | models/lgb_reg_20d_mac_v1.txt | 5000 |
-| 40d | models/lgb_reg_40d_new_stkfactor.txt | 500 |
+| 10d v8 | models/lgb_reg_10d_v8.txt | —（0927 上线，见 OPS_FACTS/fusion 链） |
+| 20d v2 | models/lgb_reg_20d_v2.txt | 融合中剔除（字段照落库观察） |
+| 40d v8 | models/lgb_reg_40d_v8.txt | —（0927 上线） |
 
-融合权重: reg10×20% + reg20×30% + reg40×50%（scoring.py line 343，2026-08-03 权重回测调整）。
+融合权重: reg10×25% + reg40×75%（scoring.py line 371，0927 v8 上线定档；reg20 剔除出融合、字段照落库观察。旧 8/3 权重 reg10×20%+reg20×30%+reg40×50% 废止）。
 重训前必须备份模型+stats（.bak 后缀），重训后校准 0.03 阈值。
 
 ## Cron 依赖链

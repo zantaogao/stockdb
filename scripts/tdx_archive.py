@@ -24,6 +24,12 @@ def archive_csv(fn, tbl):
     df['date'] = df['datetime'].str[:8].astype(int)
     df['tm'] = df['datetime'].str[9:11].astype(int) * 60 + df['datetime'].str[11:13].astype(int)
     df = df[['date', 'code', 'market', 'tm', 'open', 'high', 'low', 'close', 'volume']]
+    # 0929修复: 上游pytdx偶发同主键重复行(实锤: 301273.SZ 20260923 224行重复)→INSERT主键冲突整批崩溃。
+    # 归档前按主键去重(留首行)，重复>0时打告警行供 tdx_sync.sh/巡逻可见。
+    n_dup = df.duplicated(subset=['date', 'code', 'market', 'tm']).sum()
+    if n_dup:
+        print(f'  ⚠️ {fn} 上游重复主键 {n_dup} 行, 去重后入库')
+        df = df.drop_duplicates(subset=['date', 'code', 'market', 'tm'], keep='first')
     db = duckdb.connect(str(ARCHIVE_DB))
     try:
         db.execute(f"""CREATE TABLE IF NOT EXISTS {tbl} (

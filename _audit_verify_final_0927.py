@@ -1,0 +1,46 @@
+import os, sqlite3, subprocess
+B = os.path.expanduser("~/.hermes/stockdb")
+print("== A. 账本 ==")
+L = sqlite3.connect(f"file:{B}/ledger.db", timeout=60)
+print("holdings行:", L.execute("SELECT COUNT(*) FROM holdings WHERE status='hold'").fetchone()[0])
+print("301110行:", L.execute("SELECT COUNT(*) FROM holdings WHERE code='301110' AND status='hold'").fetchone()[0])
+print("唯一约束:", bool(L.execute("SELECT sql FROM sqlite_master WHERE name='holdings'").fetchone()[0].count("UNIQUE")))
+mv = L.execute("SELECT SUM(shares*latest_price) FROM holdings WHERE status='hold'").fetchone()[0]
+tv, cash = L.execute("SELECT total_value, cash_balance FROM account_balance WHERE account_id='main'").fetchone()
+print(f"市值={mv:.0f} 落库总资产={tv:.0f} 现金={cash:.0f} 差={tv-mv-cash:.0f}(应≈0)")
+print("peaks行数:", L.execute("SELECT COUNT(*) FROM position_peaks").fetchone()[0])
+L.close()
+print("== B. 名册/信号 ==")
+S = sqlite3.connect(f"file:{B}/signals.db", timeout=60)
+n, d, mx = S.execute("SELECT COUNT(*), COUNT(DISTINCT stock_code), MAX(list_date) FROM stock_basic").fetchone()
+print(f"stock_basic: 行={n} 唯一={d} 最晚上市={mx}")
+mk = dict(S.execute("SELECT market, COUNT(*) FROM stock_basic GROUP BY market").fetchall())
+print("market分布:", mk)
+sh = S.execute("SELECT SUM(CASE WHEN date LIKE '%-%' THEN 1 ELSE 0 END), COUNT(*) FROM signal_history").fetchone()
+print(f"signal_history dash残留={sh[0]} 总={sh[1]}")
+miss = S.execute("""SELECT COUNT(DISTINCT nf.stock_code) FROM new_factors nf
+ WHERE nf.date='2026-09-24' AND nf.stock_code NOT IN (SELECT stock_code FROM fusion_3f_signals WHERE date='2026-09-24')
+ AND nf.stock_code NOT IN (SELECT stock_code FROM stock_basic WHERE name LIKE '%ST%' OR name LIKE '%退%' OR market='北交所')""").fetchone()[0]
+print("0924漏信号(非ST非北交,残差=停牌退市):", miss)
+S.close()
+print("== C. 脚本 ==")
+hc = open(f"{B}/scripts/health_check.py").read()
+print("health_check v8白名单:", "lgb_reg_10d_v8" in hc and "lgb_reg_40d_v8" in hc, "| v3/v7残留:", "lgb_reg_10d_v3" in hc or "lgb_reg_40d_v7" in hc)
+se = open(f"{B}/core/sim_engine.py").read()
+print("sim_engine引用在位文件:", "norm_stats_v8.json" in se and "v10_v8_stats.json" in se, "| 死v6引用残留:", "v6_norm_stats_40d" in se)
+ag = open(f"{B}/AGENTS.md").read()
+print("AGENTS融合权重已更新:", "×25% + reg40×75%" in ag, "| 旧20/30/50残留:", "reg10×20% + reg20×30% + reg40×50%（scoring" in ag)
+mf = open(f"{B}/models/MANIFEST.txt").read()
+print("MANIFEST含v8条目:", mf.count("_v8"), "条")
+wh = open(os.path.expanduser("~/.hermes/scripts/weekly_health_check.sh")).read()
+print("周更链挂名册:", "weekly_refresh_stock_basic.py" in wh)
+print("== D. 备份存在性 ==")
+for p in ["/tmp/ledger.db.bak_pre0927audit", "/tmp/signals.db.bak_pre0927audit",
+          os.path.expanduser("~/.hermes/stockdb/.bak_0927audit"),
+          os.path.expanduser("~/.hermes/scripts/weekly_health_check.sh.bak_0927audit")]:
+    print(os.path.basename(p), "在" if os.path.exists(p) else "❌缺")
+print("== E. health_check 实跑 ==")
+r = subprocess.run(["/usr/bin/python3", "-B", f"{B}/scripts/health_check.py"], capture_output=True, text=True, timeout=300)
+fails = [l for l in (r.stdout + r.stderr).splitlines() if "❌" in l or "FAIL" in l.upper()]
+print("exit:", r.returncode, "失败行:", len(fails))
+for l in fails[:6]: print("  ", l.strip()[:110])
