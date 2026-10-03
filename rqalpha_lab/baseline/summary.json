@@ -1,0 +1,86 @@
+{
+ "A_prod": {
+  "fill": "close",
+  "years": {
+   "2025": {
+    "ann": 11.7,
+    "sharpe": 0.65,
+    "maxdd": -12.9
+   },
+   "2026": {
+    "ann": -24.1,
+    "sharpe": -1.11,
+    "maxdd": -25.7
+   }
+  },
+  "n_trades": 316,
+  "win": 30,
+  "avg_hold": 20.5,
+  "reasons": {
+   "score_neg": 159,
+   "5C": 64,
+   "5B": 47,
+   "stop": 46
+  }
+ },
+ "B_v8": {
+  "fill": "close",
+  "years": {
+   "2025": {
+    "ann": 29.2,
+    "sharpe": 1.41,
+    "maxdd": -13.0
+   },
+   "2026": {
+    "ann": -6.5,
+    "sharpe": -0.14,
+    "maxdd": -19.9
+   }
+  },
+  "n_trades": 236,
+  "win": 41,
+  "avg_hold": 27.0,
+  "reasons": {
+   "score_neg": 83,
+   "5C": 63,
+   "stop": 45,
+   "5B": 45
+  }
+ },
+ "B1_v8_nextopen": {
+  "fill": "next_open",
+  "years": {
+   "2025": {
+    "ann": 27.7,
+    "sharpe": 1.38,
+    "maxdd": -13.2
+   },
+   "2026": {
+    "ann": -19.0,
+    "sharpe": -0.96,
+    "maxdd": -21.6
+   }
+  },
+  "n_trades": 223,
+  "win": 42,
+  "avg_hold": 27.1,
+  "reasons": {
+   "score_neg": 87,
+   "5C": 55,
+   "5B": 42,
+   "stop": 39
+  }
+ },
+ "paired": {
+  "B_v8_vs_A": {
+   "mean_daily_bps": 6.9,
+   "nw_t5": 1.39,
+   "n_days": 344
+  },
+  "B1_v8_nextopen_vs_A": {
+   "mean_daily_bps": 4.1,
+   "nw_t5": 0.97,
+   "n_days": 344
+  }
+ }
+}
