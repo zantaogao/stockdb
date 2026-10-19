@@ -1,0 +1,10 @@
+gate: index series 20041231~20261016 n=5290, sim-window dates missing from index: 0
+A0_repro: {'2025': {'ann': 29.2, 'sharpe': 1.41, 'maxdd': -13.0}, '2026': {'ann': -6.5, 'sharpe': -0.14, 'maxdd': -19.9}} ann=14.2% mdd=-19.9% cash=0.3% gate_days=0 笔数236 胜率41% 均持27.0d
+A1_ma20slope: {'2025': {'ann': 44.3, 'sharpe': 2.14, 'maxdd': -12.3}, '2026': {'ann': -14.6, 'sharpe': -0.86, 'maxdd': -19.5}} ann=17.3% mdd=-19.5% cash=7.3% gate_days=128 笔数210 胜率44% 均持27.5d
+A2_ma50: {'2025': {'ann': 41.4, 'sharpe': 1.87, 'maxdd': -13.0}, '2026': {'ann': -20.8, 'sharpe': -1.14, 'maxdd': -21.7}} ann=12.5% mdd=-21.7% cash=12.1% gate_days=108 笔数211 胜率42% 均持26.7d
+A3_slope10: {'2025': {'ann': 29.1, 'sharpe': 1.47, 'maxdd': -12.3}, '2026': {'ann': -21.5, 'sharpe': -1.19, 'maxdd': -22.5}} ann=6.7% mdd=-22.5% cash=5.6% gate_days=94 笔数215 胜率41% 均持27.7d
+REPRO maxdiff vs nav_B_v8.csv = 0.0
+PAIRED A1_ma20slope {"mean_daily_bps": 0.9, "ann_diff_pp": 2.14, "paired_t": 0.26, "nw_t5": 0.25, "n_days": 344, "seg_2025_diff_pp": 10.74, "seg_2026_diff_pp": -10.64, "seg": {"2025": {"diff_pp": 10.74, "bps": 4.4, "t": 1.01, "n": 206}, "2026": {"diff_pp": -10.64, "bps": -4.4, "t": -0.78, "n": 138}}}
+PAIRED A2_ma50 {"mean_daily_bps": -0.7, "ann_diff_pp": -1.71, "paired_t": -0.2, "nw_t5": -0.2, "n_days": 344, "seg_2025_diff_pp": 9.06, "seg_2026_diff_pp": -17.71, "seg": {"2025": {"diff_pp": 9.06, "bps": 3.7, "t": 0.81, "n": 206}, "2026": {"diff_pp": -17.71, "bps": -7.3, "t": -1.38, "n": 138}}}
+PAIRED A3_slope10 {"mean_daily_bps": -3.0, "ann_diff_pp": -7.22, "paired_t": -0.98, "nw_t5": -0.99, "n_days": 344, "seg_2025_diff_pp": -0.3, "seg_2026_diff_pp": -17.49, "seg": {"2025": {"diff_pp": -0.3, "bps": -0.1, "t": -0.03, "n": 206}, "2026": {"diff_pp": -17.49, "bps": -7.2, "t": -1.44, "n": 138}}}
+SUMMARY written
